@@ -1,0 +1,12 @@
+/iptv-gateway-go
+/iptv-gateway-go.exe
+/data/
+/data-test/
+/data-bolt-test/
+/config/config.json
+*.log
+*.tar
+*.tar.gz
+*.zip
+/source-build/
+/image-deploy/

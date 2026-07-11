@@ -1,0 +1,25 @@
+services:
+  iptv-gateway-go:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hubei-telecom-iptv-gateway-go:1.0
+    container_name: iptv-gateway-go
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TZ: Asia/Shanghai
+      LISTEN_HOST: 0.0.0.0
+      RTSP_LISTEN_HOST: 0.0.0.0
+      RTSP_LISTEN_PORT: ${RTSP_LISTEN_PORT:-8555}
+      RTSP_PUBLIC_BASE_URL: ${RTSP_PUBLIC_BASE_URL:-}
+    volumes:
+      - ./config/config.json:/app/config/config.json:ro
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    mem_limit: 128m
+    cpus: "0.50"
