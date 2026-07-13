@@ -29,6 +29,8 @@ Go 版不依赖 Python、ffmpeg 或 CGO。Docker 最终运行镜像基于 `scrat
 
 ## Docker 部署
 
+源码构建部署：
+
 ```bash
 cp config/config.example.json config/config.json
 nano config/config.json
@@ -43,6 +45,28 @@ RTSP 8555
 ```
 
 建议使用 host 网络，以保证 IPTV 专网、组播和 RTSP UDP 回流正常。
+
+## 预构建镜像部署
+
+如果不想在 NAS 上编译源码，可以直接下载发行版里的镜像包：
+
+[hubei-telecom-iptv-gateway-go-1.0.1.tar](https://github.com/liuyi888-beep/hubei-telecom-iptv-gateway-opensource/releases/download/v1.0.1/hubei-telecom-iptv-gateway-go-1.0.1.tar)
+
+部署步骤：
+
+```bash
+cp config/config.example.json config/config.json
+nano config/config.json
+docker load -i hubei-telecom-iptv-gateway-go-1.0.1.tar
+docker compose up -d
+```
+
+镜像信息：
+
+```text
+镜像标签：hubei-telecom-iptv-gateway-go:1.0.1
+SHA256：7F36518CB77A11F68F3CE02087BC8D3B7BB6A8D20A5740116439AE694019916F
+```
 
 ## 订阅地址
 
