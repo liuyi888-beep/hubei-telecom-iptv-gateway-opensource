@@ -16,10 +16,6 @@ type Channel struct {
 	FetchedAt        int64  `json:"fetched_at_ts,omitempty"`
 }
 
-func (c Channel) CatchupAvailable() bool {
-	return c.Catchup || (c.TimeshiftEnabled && len(c.TimeshiftURL) > 7 && c.TimeshiftURL[:7] == "rtsp://")
-}
-
 type Program struct {
 	ID           int64     `json:"id,omitempty"`
 	ChannelID    string    `json:"channel_id"`
@@ -54,7 +50,7 @@ type CatchupInfo struct {
 	ChannelID         string        `json:"channel_id"`
 	InputStart        string        `json:"input_start"`
 	InputEnd          string        `json:"input_end"`
-	DetectedCatchup   bool          `json:"detected_catchup"`
+	Catchup           bool          `json:"catchup"`
 	Matched           bool          `json:"matched"`
 	MatchedMode       string        `json:"matched_mode,omitempty"`
 	RouteMode         string        `json:"route_mode,omitempty"`

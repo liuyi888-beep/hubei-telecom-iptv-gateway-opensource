@@ -77,7 +77,7 @@ func (g *Gateway) resolveCatchupPlayURL(channelID, startS, endS, mode string, fo
 		info.Error = "channel not found"
 		return "", info
 	}
-	info.DetectedCatchup = ch.Catchup
+	info.Catchup = ch.Catchup
 	var p *Program
 	var selectedMode string
 	var reqStart, reqEnd time.Time

@@ -106,7 +106,7 @@ func (g *Gateway) requestWithRelogin(method, rawURL string, form url.Values, ext
 	if !allowRelogin {
 		return text, final, nil
 	}
-	if err := g.fullLogin(); err != nil {
+	if err := g.renewLogin(); err != nil {
 		return text, final, err
 	}
 	return g.requestRaw(method, rawURL, form, extra, timeout)
@@ -178,8 +178,10 @@ func parseChannelConfigs(text, format string) []Channel {
 		}
 		seen[key] = true
 		length, _ := strconv.Atoi(attrs["TimeShiftLength"])
+		timeshiftURL := strings.TrimSpace(attrs["TimeShiftURL"])
+		timeshiftEnabled := attrs["TimeShift"] == "1"
 		ch := Channel{ID: id, Name: name, Index: attrs["UserChannelID"], LiveURL: normalizeLiveURL(igmp, format), Group: guessGroup(name), APIType: guessEPGAPI(name),
-			TimeshiftURL: strings.TrimSpace(attrs["TimeShiftURL"]), TimeshiftEnabled: attrs["TimeShift"] == "1", TimeshiftLength: length}
+			Catchup: timeshiftEnabled && strings.HasPrefix(timeshiftURL, "rtsp://"), TimeshiftURL: timeshiftURL, TimeshiftEnabled: timeshiftEnabled, TimeshiftLength: length}
 		out = append(out, ch)
 	}
 	sort.Slice(out, func(i, j int) bool {

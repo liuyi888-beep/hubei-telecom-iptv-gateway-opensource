@@ -146,33 +146,6 @@ func (g *Gateway) findProgram(channelID string, start time.Time, margin int) (*P
 	return best, err
 }
 
-func (g *Gateway) endedPrograms(channelID string, limit int) ([]Program, error) {
-	out := []Program{}
-	now := time.Now().Unix()
-	err := g.db.View(func(tx *bolt.Tx) error {
-		c := tx.Bucket(bucketPrograms).Cursor()
-		prefix := channelProgramPrefix(channelID)
-		for k, v := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, v = c.Next() {
-			var p Program
-			if err := json.Unmarshal(v, &p); err != nil {
-				return err
-			}
-			if p.PrevueCode != "" && p.End.Unix() < now {
-				out = append(out, p)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].End.After(out[j].End) })
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
-}
-
 func (g *Gateway) allPrograms() ([]Program, error) {
 	out := []Program{}
 	err := g.db.View(func(tx *bolt.Tx) error {
@@ -216,31 +189,6 @@ func (g *Gateway) updatePlayURL(p Program) error {
 				return err
 			}
 			return b.Put(k, raw)
-		}
-		return nil
-	})
-}
-
-func (g *Gateway) updateCatchup(channels []Channel) error {
-	return g.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(bucketChannels)
-		for _, c := range channels {
-			raw := b.Get([]byte(c.ID))
-			if raw == nil {
-				continue
-			}
-			var existing Channel
-			if err := json.Unmarshal(raw, &existing); err != nil {
-				return err
-			}
-			existing.Catchup = c.Catchup
-			out, err := json.Marshal(existing)
-			if err != nil {
-				return err
-			}
-			if err := b.Put([]byte(c.ID), out); err != nil {
-				return err
-			}
 		}
 		return nil
 	})

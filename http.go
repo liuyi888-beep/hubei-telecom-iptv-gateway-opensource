@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -56,11 +57,24 @@ func humanDuration(d time.Duration) string {
 }
 
 func (g *Gateway) refreshPayload() map[string]any {
+	state := g.getRefreshState()
 	out := map[string]any{
 		"interval_hours":     g.cfg.RefreshHours,
-		"startup_enabled":    g.cfg.StartupRefresh,
 		"background_enabled": g.cfg.BackgroundRefresh,
 		"cache_fresh":        false,
+		"running":            state.Running,
+	}
+	if state.Running {
+		out["running_force"] = state.Force
+	}
+	if state.StartedAt != "" {
+		out["started_at"] = state.StartedAt
+	}
+	if state.FinishedAt != "" {
+		out["finished_at"] = state.FinishedAt
+	}
+	if state.LastError != "" {
+		out["last_error"] = state.LastError
 	}
 	if last, ok := g.lastRefreshAt(); ok {
 		next := last.Add(time.Duration(max(1, g.cfg.RefreshHours)) * time.Hour)
@@ -78,7 +92,7 @@ func (g *Gateway) statusPayload() map[string]any {
 	cc, pc, _ := g.counts()
 	return map[string]any{
 		"name":    "湖北电信IPTV网关 Go",
-		"version": "1.0.0",
+		"version": "1.0.1",
 		"server": map[string]any{
 			"listen_host":          g.cfg.ListenHost,
 			"listen_port":          g.cfg.ListenPort,
@@ -166,7 +180,7 @@ h1{margin:0 0 4px;font-size:26px}h2{margin:0 0 12px;font-size:17px}
 .ok{color:#067647}.bad{color:#b42318}.muted{color:#64748b}
 .panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-top:14px}
 .row{display:flex;gap:8px;flex-wrap:wrap}.row a,.btn{display:inline-block;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#0f172a;text-decoration:none;padding:7px 10px}
-.btn{cursor:pointer;font:inherit}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;word-break:break-all}
+.btn{cursor:pointer;font:inherit}.btn:disabled{opacity:.55;cursor:not-allowed}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;word-break:break-all}
 table{width:100%;border-collapse:collapse}td{padding:6px 0;border-bottom:1px solid #eef2f7}td:first-child{color:#64748b;width:130px}
 </style>
 </head>
@@ -189,7 +203,7 @@ table{width:100%;border-collapse:collapse}td{padding:6px 0;border-bottom:1px sol
 <tr><td>后台刷新</td><td>` + html.EscapeString(bgText) + `</td></tr>
 <tr><td>最后错误</td><td>` + html.EscapeString(errText) + `</td></tr>
 </table>
-<form action="/refresh" method="get" style="margin-top:12px"><input type="hidden" name="force" value="1"><button class="btn" type="submit">强制刷新</button></form>
+<div style="margin-top:12px"><button id="refreshBtn" class="btn" type="button">强制刷新</button> <span id="refreshMsg" class="muted"></span></div>
 </div>
 <div class="panel">
 <h2>订阅与调试</h2>
@@ -197,6 +211,40 @@ table{width:100%;border-collapse:collapse}td{padding:6px 0;border-bottom:1px sol
 <p class="muted">RTSP 回看入口：</p>
 <p class="mono">` + html.EscapeString(g.cfg.rtspBaseURL()+"/catchup") + `</p>
 </div>
+<script>
+const refreshBtn=document.getElementById('refreshBtn');
+const refreshMsg=document.getElementById('refreshMsg');
+async function updateRefreshState(){
+  try{
+    const r=await fetch('/status.json',{cache:'no-store'});
+    const j=await r.json();
+    const running=!!(j.refresh&&j.refresh.running);
+    refreshBtn.disabled=running;
+    refreshMsg.textContent=running?'正在刷新...':'';
+  }catch(e){}
+}
+refreshBtn.addEventListener('click',async()=>{
+  refreshBtn.disabled=true;
+  refreshMsg.textContent='已提交，正在刷新...';
+  try{
+    const r=await fetch('/refresh?force=1',{cache:'no-store'});
+    const j=await r.json();
+    if(!j.ok&&j.running){
+      refreshMsg.textContent='已经在刷新中...';
+    }else if(!j.ok){
+      refreshMsg.textContent=j.error||j.message||'刷新提交失败';
+      refreshBtn.disabled=false;
+    }else{
+      refreshMsg.textContent='已提交，正在刷新...';
+    }
+  }catch(e){
+    refreshMsg.textContent='刷新提交失败';
+    refreshBtn.disabled=false;
+  }
+});
+setInterval(updateRefreshState,5000);
+updateRefreshState();
+</script>
 </main></body></html>`
 }
 
@@ -212,15 +260,7 @@ func (g *Gateway) handler() http.Handler {
 	mux.HandleFunc("/status.json", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, g.statusPayload()) })
 	mux.HandleFunc("/api/auth/status", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, g.authStatus) })
 	mux.HandleFunc("/api/channels", func(w http.ResponseWriter, r *http.Request) {
-		type safe struct {
-			Channel
-			TimeshiftURLAvailable bool `json:"timeshift_url_available"`
-		}
-		out := []safe{}
-		for _, c := range g.getChannels() {
-			out = append(out, safe{c, strings.HasPrefix(c.TimeshiftURL, "rtsp://")})
-		}
-		writeJSON(w, 200, out)
+		writeJSON(w, 200, g.getChannels())
 	})
 	mux.HandleFunc("/diyp/live.txt", func(w http.ResponseWriter, r *http.Request) { textResponse(w, "text/plain", g.diyp()) })
 	mux.HandleFunc("/ku9.m3u", func(w http.ResponseWriter, r *http.Request) { textResponse(w, "audio/x-mpegurl", g.ku9M3U()) })
@@ -228,11 +268,11 @@ func (g *Gateway) handler() http.Handler {
 	mux.HandleFunc("/epg.xml", func(w http.ResponseWriter, r *http.Request) { textResponse(w, "application/xml", g.xmltv()) })
 	mux.HandleFunc("/refresh", func(w http.ResponseWriter, r *http.Request) {
 		force := r.URL.Query().Get("force") == "1" || strings.EqualFold(r.URL.Query().Get("force"), "true")
-		if err := g.refresh(r.Context(), force); err != nil {
-			writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+		if !g.refreshAsync(context.Background(), force) {
+			writeJSON(w, 409, map[string]any{"ok": false, "running": true, "message": "refresh already running", "refresh": g.refreshPayload()})
 			return
 		}
-		writeJSON(w, 200, g.statusPayload())
+		writeJSON(w, 202, map[string]any{"ok": true, "accepted": true, "refresh": g.refreshPayload()})
 	})
 	mux.HandleFunc("/catchup.ts", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -263,10 +303,21 @@ func (g *Gateway) handler() http.Handler {
 	return cors(mux)
 }
 
-func (g *Gateway) runHTTP(ctx context.Context) error {
-	server := &http.Server{Addr: g.cfg.ListenHost + ":" + strconv.Itoa(g.cfg.ListenPort), Handler: g.handler(), ReadHeaderTimeout: 10 * time.Second}
+func (g *Gateway) runHTTP(ctx context.Context, onStarted func()) error {
+	addr := g.cfg.ListenHost + ":" + strconv.Itoa(g.cfg.ListenPort)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	server := &http.Server{Addr: addr, Handler: g.handler(), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)
-	go func() { log.Printf("HTTP listening on http://%s", server.Addr); errCh <- server.ListenAndServe() }()
+	log.Printf("HTTP listening on http://%s", server.Addr)
+	go func() {
+		errCh <- server.Serve(ln)
+	}()
+	if onStarted != nil {
+		onStarted()
+	}
 	select {
 	case <-ctx.Done():
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)

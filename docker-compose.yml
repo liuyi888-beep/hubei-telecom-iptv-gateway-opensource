@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: hubei-telecom-iptv-gateway-go:1.0
+    image: hubei-telecom-iptv-gateway-go:1.0.1
     container_name: iptv-gateway-go
     restart: unless-stopped
     network_mode: host

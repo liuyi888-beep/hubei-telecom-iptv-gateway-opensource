@@ -39,7 +39,7 @@ func (g *Gateway) ku9M3U() string {
 		if c.Name == "" || c.LiveURL == "" {
 			continue
 		}
-		if c.CatchupAvailable() {
+		if c.Catchup {
 			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s" catchup="default" catchup-source="%s",%s`, c.ID, c.Name, c.Group, g.ku9Catchup(c), c.Name))
 		} else {
 			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s",%s`, c.ID, c.Name, c.Group, c.Name))
@@ -55,7 +55,7 @@ func (g *Gateway) rtp2M3U() string {
 		if c.Name == "" || c.LiveURL == "" {
 			continue
 		}
-		if c.CatchupAvailable() {
+		if c.Catchup {
 			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s" catchup="default" catchup-days="%d" catchup-source="%s",%s`, c.ID, c.Name, c.Group, g.cfg.CatchupDays, g.httpTSCatchup(c), c.Name))
 		} else {
 			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s",%s`, c.ID, c.Name, c.Group, c.Name))

@@ -19,12 +19,22 @@ type Gateway struct {
 	mu               sync.RWMutex
 	loginMu          sync.Mutex
 	refreshMu        sync.Mutex
+	refreshStateMu   sync.Mutex
 	channels         []Channel
 	authStatus       AuthStatus
 	userToken        string
 	lastLogin        time.Time
 	lastRefreshError string
+	refreshState     RefreshState
 	tsSem            chan struct{}
+}
+
+type RefreshState struct {
+	Running    bool   `json:"running"`
+	Force      bool   `json:"force"`
+	StartedAt  string `json:"started_at,omitempty"`
+	FinishedAt string `json:"finished_at,omitempty"`
+	LastError  string `json:"last_error,omitempty"`
 }
 
 func newGateway(cfg Config) (*Gateway, error) {

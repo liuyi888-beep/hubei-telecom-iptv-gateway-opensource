@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+var errRefreshRunning = errors.New("refresh already running")
+
 func (g *Gateway) epgBase() string {
 	if g.cfg.Auth.EPGBase != "" {
 		return strings.TrimRight(g.cfg.Auth.EPGBase, "/")
@@ -134,7 +136,7 @@ func (g *Gateway) resolvePlayURL(p *Program, force bool) error {
 		return nil
 	}
 	if g.cfg.ProactiveBeforePlayURL && (g.lastLogin.IsZero() || time.Since(g.lastLogin) > time.Duration(g.cfg.PlayURLAuthCheckSeconds)*time.Second) {
-		if err := g.fullLogin(); err != nil {
+		if err := g.renewLogin(); err != nil {
 			return err
 		}
 	}
@@ -184,7 +186,63 @@ func (g *Gateway) nextRefreshAt() (time.Time, bool) {
 	return last.Add(time.Duration(max(1, g.cfg.RefreshHours)) * time.Hour), true
 }
 
+func (g *Gateway) getRefreshState() RefreshState {
+	g.refreshStateMu.Lock()
+	defer g.refreshStateMu.Unlock()
+	return g.refreshState
+}
+
+func (g *Gateway) beginRefresh(force bool) bool {
+	g.refreshStateMu.Lock()
+	defer g.refreshStateMu.Unlock()
+	if g.refreshState.Running {
+		return false
+	}
+	g.refreshState.Running = true
+	g.refreshState.Force = force
+	g.refreshState.StartedAt = nowLocal().Format(time.RFC3339)
+	g.refreshState.FinishedAt = ""
+	g.refreshState.LastError = ""
+	return true
+}
+
+func (g *Gateway) finishRefresh(err error) {
+	g.refreshStateMu.Lock()
+	defer g.refreshStateMu.Unlock()
+	g.refreshState.Running = false
+	g.refreshState.FinishedAt = nowLocal().Format(time.RFC3339)
+	if err != nil {
+		g.refreshState.LastError = err.Error()
+	} else {
+		g.refreshState.LastError = ""
+	}
+}
+
+func (g *Gateway) refreshAsync(ctx context.Context, force bool) bool {
+	if !g.beginRefresh(force) {
+		return false
+	}
+	go func() {
+		err := g.refreshLocked(ctx, force)
+		g.finishRefresh(err)
+		if err != nil {
+			g.lastRefreshError = err.Error()
+			log.Printf("manual refresh failed: %v", err)
+		}
+	}()
+	return true
+}
+
 func (g *Gateway) refresh(ctx context.Context, force bool) error {
+	if !g.beginRefresh(force) {
+		return errRefreshRunning
+	}
+	err := g.refreshLocked(ctx, force)
+	g.finishRefresh(err)
+	return err
+}
+
+func (g *Gateway) refreshLocked(ctx context.Context, force bool) error {
 	g.refreshMu.Lock()
 	defer g.refreshMu.Unlock()
 	if !force {
@@ -250,34 +308,8 @@ func (g *Gateway) refresh(ctx context.Context, force bool) error {
 	if err := g.saveSnapshot(channels, programs); err != nil {
 		return err
 	}
-	if g.cfg.DetectCatchupCapability {
-		sem := make(chan struct{}, max(1, g.cfg.CatchupConcurrency))
-		var dwg sync.WaitGroup
-		for i := range channels {
-			if channels[i].Catchup {
-				continue
-			}
-			dwg.Add(1)
-			go func(idx int) {
-				defer dwg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				ended, _ := g.endedPrograms(channels[idx].ID, 2)
-				for j := range ended {
-					if g.resolvePlayURL(&ended[j], false) == nil {
-						channels[idx].Catchup = true
-						break
-					}
-				}
-			}(i)
-		}
-		dwg.Wait()
-	}
-	if err := g.updateCatchup(channels); err != nil {
-		return err
-	}
 	g.setChannels(channels)
-	_ = g.stateSet("last_refresh_unix", time.Now().Format(time.RFC3339))
+	_ = g.stateSet("last_refresh_unix", nowLocal().Format(time.RFC3339))
 	g.lastRefreshError = ""
 	log.Printf("refresh complete channels=%d programs=%d catchup=%d", len(channels), len(programs), countCatchup(channels))
 	return nil
@@ -286,7 +318,7 @@ func (g *Gateway) refresh(ctx context.Context, force bool) error {
 func countCatchup(ch []Channel) int {
 	n := 0
 	for _, c := range ch {
-		if c.CatchupAvailable() {
+		if c.Catchup {
 			n++
 		}
 	}
@@ -294,16 +326,58 @@ func countCatchup(ch []Channel) int {
 }
 
 func (g *Gateway) scheduler(ctx context.Context) {
-	ticker := time.NewTicker(time.Duration(max(1, g.cfg.RefreshHours)) * time.Hour)
-	defer ticker.Stop()
+	interval := time.Duration(max(1, g.cfg.RefreshHours)) * time.Hour
+	retryDelay := 10 * time.Minute
+	runningDelay := 300 * time.Second
+	log.Printf("background refresh scheduler starting")
 	for {
+		wait := time.Duration(0)
+		next := nowLocal()
+		if last, ok := g.lastRefreshAt(); ok {
+			next = last.Add(interval)
+			wait = time.Until(next)
+			if wait < 0 {
+				wait = 0
+			}
+		}
+		if wait > 0 {
+			log.Printf("scheduled refresh next=%s in=%s", next.In(shanghai).Format(time.RFC3339), humanDuration(wait))
+			timer := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
+		log.Printf("scheduled refresh starting")
+		if err := g.refresh(ctx, false); err != nil {
+			if errors.Is(err, errRefreshRunning) {
+				log.Printf("scheduled refresh skipped: refresh already running; retry in %s", runningDelay)
+				timer := time.NewTimer(runningDelay)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+				continue
+			}
+			g.lastRefreshError = err.Error()
+			log.Printf("scheduled refresh failed: %v; retry in %s", err, retryDelay)
+			timer := time.NewTimer(retryDelay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			if err := g.refresh(ctx, true); err != nil {
-				log.Printf("scheduled refresh failed: %v", err)
-			}
+		default:
 		}
 	}
 }

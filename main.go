@@ -43,24 +43,18 @@ func main() {
 	g.logStatus()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if cfg.StartupRefresh {
-		go func() {
-			if err := g.refresh(ctx, false); err != nil {
-				log.Printf("startup refresh failed: %v", err)
-			}
-		}()
-	}
-	if cfg.BackgroundRefresh {
-		go g.scheduler(ctx)
-	} else {
-		log.Printf("background refresh disabled")
-	}
 	rtsp := &RTSPRedirectServer{g: g}
 	if err := rtsp.Start(); err != nil {
 		log.Fatal(err)
 	}
 	defer rtsp.Close()
-	if err := g.runHTTP(ctx); err != nil && err != context.Canceled {
+	if err := g.runHTTP(ctx, func() {
+		if cfg.BackgroundRefresh {
+			go g.scheduler(ctx)
+		} else {
+			log.Printf("automatic refresh disabled")
+		}
+	}); err != nil && err != context.Canceled {
 		log.Printf("HTTP stopped: %v", err)
 	}
 }

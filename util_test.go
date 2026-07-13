@@ -39,7 +39,7 @@ func TestPlayseekPreservesAuthValue(t *testing.T) {
 func TestChannelParser(t *testing.T) {
 	src := `jsSetConfig('Channel','ChannelID="ch1",ChannelName="CCTV1HD",UserChannelID="1",ChannelURL="igmp://239.1.1.1:1234",TimeShift="1",TimeShiftURL="rtsp://1.2.3.4/a?AuthInfo=x",TimeShiftLength="14400"');`
 	ch := parseChannelConfigs(src, "rtp")
-	if len(ch) != 1 || ch[0].ID != "ch1" || ch[0].TimeshiftLength != 14400 || !ch[0].TimeshiftEnabled {
+	if len(ch) != 1 || ch[0].ID != "ch1" || ch[0].TimeshiftLength != 14400 || !ch[0].TimeshiftEnabled || !ch[0].Catchup {
 		t.Fatalf("channels=%+v", ch)
 	}
 }

@@ -39,15 +39,13 @@ type Config struct {
 	AuthTimeout    int    `json:"auth_timeout"`
 	ResolveTimeout int    `json:"resolve_timeout"`
 
-	DaysBack           int  `json:"days_back"`
-	DaysForward        int  `json:"days_forward"`
-	IncludeToday       bool `json:"include_today"`
-	CatchupDays        int  `json:"catchup_days"`
-	RefreshHours       int  `json:"refresh_interval_hours"`
-	StartupRefresh     bool `json:"startup_refresh"`
-	BackgroundRefresh  bool `json:"background_refresh_enabled"`
-	EPGConcurrency     int  `json:"epg_fetch_concurrency"`
-	CatchupConcurrency int  `json:"catchup_detect_concurrency"`
+	DaysBack          int  `json:"days_back"`
+	DaysForward       int  `json:"days_forward"`
+	IncludeToday      bool `json:"include_today"`
+	CatchupDays       int  `json:"catchup_days"`
+	RefreshHours      int  `json:"refresh_interval_hours"`
+	BackgroundRefresh bool `json:"background_refresh_enabled"`
+	EPGConcurrency    int  `json:"epg_fetch_concurrency"`
 
 	CatchupTimeMode         string `json:"catchup_time_mode"`
 	TimeshiftFallbackHours  int    `json:"current_timeshift_window_hours"`
@@ -69,7 +67,6 @@ type Config struct {
 	ProactiveBeforePlayURL  bool   `json:"proactive_login_before_playurl"`
 	PlayURLAuthCheckSeconds int    `json:"playurl_auth_check_interval_seconds"`
 	ProtectOnEmptyRefresh   bool   `json:"protect_cache_on_empty_refresh"`
-	DetectCatchupCapability bool   `json:"detect_catchup_capability"`
 	ResolvePlayURL          bool   `json:"resolve_play_url"`
 	AutoRebuildSession      bool   `json:"auto_rebuild_session"`
 	EPGAutoTryAltAPI        bool   `json:"epg_auto_try_alt_api"`
@@ -93,8 +90,8 @@ func defaultConfig() Config {
 		ListenHost: "0.0.0.0", ListenPort: 8899, DataDir: "data",
 		HTTPTimeout: 12, AuthTimeout: 20, ResolveTimeout: 12,
 		DaysBack: 7, DaysForward: 7, IncludeToday: true, CatchupDays: 7,
-		RefreshHours: 24, StartupRefresh: true, BackgroundRefresh: true,
-		EPGConcurrency: 8, CatchupConcurrency: 4,
+		RefreshHours: 24, BackgroundRefresh: true,
+		EPGConcurrency:  8,
 		CatchupTimeMode: "auto", TimeshiftFallbackHours: 4,
 		TimeshiftSafetySeconds: 120, CatchupToleranceSeconds: 120,
 		NearbyProgramsSpanHours: 8, CatchupPlaceholderMode: "utc", CatchupLogSize: 100,
@@ -102,7 +99,7 @@ func defaultConfig() Config {
 		RTSPClientTimeout: 15, RTSPRedirectTimeout: 8, RTSPRedirectMaxHops: 4,
 		ProactiveLoginEnabled: true, ProactiveBeforePlayURL: true,
 		PlayURLAuthCheckSeconds: 3600, ProtectOnEmptyRefresh: true,
-		DetectCatchupCapability: true, ResolvePlayURL: true, AutoRebuildSession: true,
+		ResolvePlayURL: true, AutoRebuildSession: true,
 		EPGAutoTryAltAPI: true, LiveURLFormat: "rtp",
 		HTTPUserAgent: "Mozilla/5.0 (Linux; U; Android 4.4.2; zh-cn) AppleWebKit/534.30 IPTV",
 		Headers:       map[string]string{}, EPGBase: "http://121.60.129.244:8080",

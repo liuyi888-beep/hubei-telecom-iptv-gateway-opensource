@@ -143,9 +143,17 @@ func parseUserToken(text string) string {
 }
 
 func (g *Gateway) fullLogin() error {
+	return g.fullLoginWithChannels(true)
+}
+
+func (g *Gateway) renewLogin() error {
+	return g.fullLoginWithChannels(false)
+}
+
+func (g *Gateway) fullLoginWithChannels(updateChannels bool) error {
 	g.loginMu.Lock()
 	defer g.loginMu.Unlock()
-	if !g.lastLogin.IsZero() && time.Since(g.lastLogin) < 10*time.Second && g.authStatus.OK {
+	if !updateChannels && !g.lastLogin.IsZero() && time.Since(g.lastLogin) < 10*time.Second && g.authStatus.OK {
 		return nil
 	}
 	a := g.cfg.Auth
@@ -202,7 +210,7 @@ func (g *Gateway) fullLogin() error {
 	g.authStatus = AuthStatus{OK: true, Mode: "full_login", Message: "login ok", UserTokenLength: len(token), DynamicChannels: len(channels), LastLogin: nowLocal().Format(time.RFC3339)}
 	_ = g.stateSet("user_token", token)
 	_ = g.stateSet("auth_status", g.authStatus)
-	if len(channels) > 0 {
+	if updateChannels && len(channels) > 0 {
 		g.setChannels(channels)
 	}
 	return nil
