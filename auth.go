@@ -200,14 +200,19 @@ func (g *Gateway) fullLoginWithChannels(updateChannels bool) error {
 		}
 		return fmt.Errorf("UserToken not found: %s", preview)
 	}
-	g.userToken = token
-	channels, err := g.initEPGSession(token, text, action)
+	channels, err := g.initEPGSession(token, text, action, updateChannels)
 	if err != nil {
 		return err
 	}
 	g.userToken = token
 	g.lastLogin = time.Now()
-	g.authStatus = AuthStatus{OK: true, Mode: "full_login", Message: "login ok", UserTokenLength: len(token), DynamicChannels: len(channels), LastLogin: nowLocal().Format(time.RFC3339)}
+	mode := "renew_login"
+	dynamicChannels := len(g.getChannels())
+	if updateChannels {
+		mode = "full_login"
+		dynamicChannels = len(channels)
+	}
+	g.authStatus = AuthStatus{OK: true, Mode: mode, Message: "login ok", UserTokenLength: len(token), DynamicChannels: dynamicChannels, LastLogin: nowLocal().Format(time.RFC3339)}
 	_ = g.stateSet("user_token", token)
 	_ = g.stateSet("auth_status", g.authStatus)
 	if updateChannels && len(channels) > 0 {

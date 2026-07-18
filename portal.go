@@ -65,7 +65,17 @@ func (g *Gateway) requestRaw(method, rawURL string, form url.Values, extra map[s
 	if err != nil {
 		return "", "", err
 	}
-	return decodeBody(b, resp.Header.Get("Content-Type")), resp.Request.URL.String(), nil
+	text := decodeBody(b, resp.Header.Get("Content-Type"))
+	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+		preview := regexp.MustCompile(`\s+`).ReplaceAllString(strings.TrimSpace(text), " ")
+		preview = regexp.MustCompile(`[A-Za-z0-9@_=-]{16,}`).ReplaceAllString(preview, "<redacted>")
+		preview = regexp.MustCompile(`(?i)(token|auth|password|secret)[A-Za-z0-9@_=-]*`).ReplaceAllString(preview, "<redacted>")
+		if len(preview) > 180 {
+			preview = preview[:180]
+		}
+		return "", resp.Request.URL.String(), fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, resp.Request.URL.Host, preview)
+	}
+	return text, resp.Request.URL.String(), nil
 }
 
 var reRebuildURL = regexp.MustCompile(`(?s)weburl\s*=\s*'([^']*)'\s*\+\s*usertoken\s*\+\s*'([^']*)'`)
@@ -267,7 +277,7 @@ func (g *Gateway) authRequest(method, rawURL string, form url.Values, timeout ti
 	return g.requestWithRelogin(method, rawURL, form, map[string]string{"User-Agent": "webkit;Resolution(PAL,720P,1080P)"}, timeout, false)
 }
 
-func (g *Gateway) initEPGSession(token, authText, authAction string) ([]Channel, error) {
+func (g *Gateway) initEPGSession(token, authText, authAction string, parseChannels bool) ([]Channel, error) {
 	a := g.cfg.Auth
 	timeout := time.Duration(g.cfg.AuthTimeout) * time.Second
 	texts := []string{}
@@ -281,7 +291,9 @@ func (g *Gateway) initEPGSession(token, authText, authAction string) ([]Channel,
 		if err != nil {
 			return nil, err
 		}
-		texts = append(texts, text)
+		if parseChannels {
+			texts = append(texts, text)
+		}
 		d.updateFromAuthHop(text, final)
 	}
 	if d.easipEntryURL == "" {
@@ -308,7 +320,9 @@ func (g *Gateway) initEPGSession(token, authText, authAction string) ([]Channel,
 	if err != nil {
 		return nil, err
 	}
-	texts = append(texts, text)
+	if parseChannels {
+		texts = append(texts, text)
+	}
 	d.updateFromEASIP(text)
 	if d.epgEntryURL == "" || d.epgBase == "" {
 		return nil, fmt.Errorf("EPG entry not found")
@@ -319,7 +333,9 @@ func (g *Gateway) initEPGSession(token, authText, authAction string) ([]Channel,
 	if err != nil {
 		return nil, err
 	}
-	texts = append(texts, epgIndexText)
+	if parseChannels {
+		texts = append(texts, epgIndexText)
+	}
 	portalForm := parseHiddenInputs(epgIndexText, "authform")
 	if len(portalForm) == 0 {
 		return nil, fmt.Errorf("authform not found")
@@ -329,7 +345,9 @@ func (g *Gateway) initEPGSession(token, authText, authAction string) ([]Channel,
 		if err != nil {
 			return err
 		}
-		texts = append(texts, text)
+		if parseChannels {
+			texts = append(texts, text)
+		}
 		return nil
 	}
 	if err := callEPG(http.MethodPost, "/iptvepg/function/funcportalauth.jsp", portalForm); err != nil {
@@ -345,7 +363,9 @@ func (g *Gateway) initEPGSession(token, authText, authAction string) ([]Channel,
 	if err != nil {
 		return nil, err
 	}
-	texts = append(texts, judgerText)
+	if parseChannels {
+		texts = append(texts, judgerText)
+	}
 	builderForm := parseHiddenInputs(judgerText, "mainWinSrcForm")
 	if len(builderForm) == 0 {
 		return nil, fmt.Errorf("mainWinSrcForm not found")
@@ -355,6 +375,9 @@ func (g *Gateway) initEPGSession(token, authText, authAction string) ([]Channel,
 	}
 	if err := callEPG(http.MethodPost, "/iptvepg/function/frameset_builder.jsp", builderForm); err != nil {
 		return nil, err
+	}
+	if !parseChannels {
+		return nil, nil
 	}
 	channels := parseChannelConfigs(strings.Join(texts, "\n"), g.cfg.LiveURLFormat)
 	if len(channels) == 0 {

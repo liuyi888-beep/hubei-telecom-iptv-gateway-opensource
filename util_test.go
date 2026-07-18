@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,9 @@ func TestChannelParser(t *testing.T) {
 	if len(ch) != 1 || ch[0].ID != "ch1" || ch[0].TimeshiftLength != 14400 || !ch[0].TimeshiftEnabled || !ch[0].Catchup {
 		t.Fatalf("channels=%+v", ch)
 	}
+	if ch[0].TimeshiftURL == "" {
+		t.Fatalf("timeshift url missing: %+v", ch[0])
+	}
 	if ch[0].FCC != "121.60.255.120:15970" {
 		t.Fatalf("fcc=%q", ch[0].FCC)
 	}
@@ -65,8 +69,19 @@ func TestRTP2HTTPDCatchupTimeMode(t *testing.T) {
 func TestEPGBaseUsesRuntimeDiscoveredValue(t *testing.T) {
 	g := &Gateway{}
 	g.setEPGBase("http://121.60.129.244:8080/")
-	if got := g.epgBase(); got != "http://121.60.129.244:8080" {
+	got, err := g.epgBaseRequired()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "http://121.60.129.244:8080" {
 		t.Fatalf("epg base=%q", got)
+	}
+}
+
+func TestEPGBaseRequiresDiscoveredValue(t *testing.T) {
+	g := &Gateway{}
+	if _, err := g.epgBaseRequired(); err == nil || !strings.Contains(err.Error(), "EPG base not discovered") {
+		t.Fatalf("expected missing epg base error, got %v", err)
 	}
 }
 
@@ -94,5 +109,45 @@ func TestRTP2HTTPDM3UAppendsFCC(t *testing.T) {
 	got := g.rtp2M3U()
 	if !strings.Contains(got, "rtp://239.253.64.120:5140/?fcc=121.60.255.120:15970") {
 		t.Fatalf("rtp2httpd m3u missing fcc:\n%s", got)
+	}
+}
+
+func TestChannelAPIPayloadDoesNotExposeTimeshiftURL(t *testing.T) {
+	channels := []Channel{{
+		ID:               "ch1",
+		Name:             "CCTV1HD",
+		Index:            "1",
+		LiveURL:          "rtp://239.1.1.1:1234",
+		FCC:              "121.60.255.120:15970",
+		TimeshiftURL:     "rtsp://secret.example/live?AuthInfo=secret",
+		TimeshiftEnabled: true,
+		TimeshiftLength:  14400,
+		Catchup:          true,
+	}}
+	raw, err := json.Marshal(channelAPIPayloads(channels))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if strings.Contains(text, "timeshift_url") || strings.Contains(text, "AuthInfo") {
+		t.Fatalf("api payload leaked timeshift url: %s", text)
+	}
+	if !strings.Contains(text, `"fcc":"121.60.255.120:15970"`) {
+		t.Fatalf("api payload missing fcc: %s", text)
+	}
+}
+
+func TestGuessGroupUsesReadableChinese(t *testing.T) {
+	tests := map[string]string{
+		"CCTV1HD": "央视",
+		"湖南卫视HD":  "卫视",
+		"湖北综合HD":  "湖北本地",
+		"少儿动画HD":  "少儿动漫",
+		"未知频道":    "其他",
+	}
+	for name, want := range tests {
+		if got := guessGroup(name); got != want {
+			t.Fatalf("guessGroup(%q)=%q want %q", name, got, want)
+		}
 	}
 }

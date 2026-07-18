@@ -33,6 +33,40 @@ func (g *Gateway) httpTSCatchup(c Channel) string {
 	return g.cfg.publicBaseURL() + "/catchup.ts?channel_id=" + url.QueryEscape(c.ID) + "&time_mode=" + mode + "&start=" + a + "&end=" + b
 }
 
+type channelAPIPayload struct {
+	ID               string `json:"channel_id"`
+	Name             string `json:"name"`
+	Index            string `json:"channel_index"`
+	LiveURL          string `json:"live_url"`
+	FCC              string `json:"fcc,omitempty"`
+	Group            string `json:"group"`
+	APIType          string `json:"api_type"`
+	Catchup          bool   `json:"catchup"`
+	TimeshiftEnabled bool   `json:"timeshift_enabled"`
+	TimeshiftLength  int    `json:"timeshift_length"`
+	FetchedAt        int64  `json:"fetched_at_ts,omitempty"`
+}
+
+func channelAPIPayloads(channels []Channel) []channelAPIPayload {
+	out := make([]channelAPIPayload, 0, len(channels))
+	for _, c := range channels {
+		out = append(out, channelAPIPayload{
+			ID:               c.ID,
+			Name:             c.Name,
+			Index:            c.Index,
+			LiveURL:          c.LiveURL,
+			FCC:              c.FCC,
+			Group:            c.Group,
+			APIType:          c.APIType,
+			Catchup:          c.Catchup,
+			TimeshiftEnabled: c.TimeshiftEnabled,
+			TimeshiftLength:  c.TimeshiftLength,
+			FetchedAt:        c.FetchedAt,
+		})
+	}
+	return out
+}
+
 func uniqueChannelDisplayNames(channels []Channel) map[string]string {
 	seen := map[string]int{}
 	out := map[string]string{}

@@ -20,10 +20,26 @@ var errRefreshRunning = errors.New("refresh already running")
 func (g *Gateway) epgBase() string {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return strings.TrimRight(g.epgBaseURL, "/")
+	base := strings.TrimRight(g.epgBaseURL, "/")
+	if base == "" {
+		return ""
+	}
+	return base
 }
 
-func (g *Gateway) epgURL(ch Channel, date, api string) string {
+func (g *Gateway) epgBaseRequired() (string, error) {
+	base := g.epgBase()
+	if base == "" {
+		return "", fmt.Errorf("EPG base not discovered; refresh or login first")
+	}
+	return base, nil
+}
+
+func (g *Gateway) epgURL(ch Channel, date, api string) (string, error) {
+	base, err := g.epgBaseRequired()
+	if err != nil {
+		return "", err
+	}
 	q := url.Values{"channelID": {ch.ID}, "curdate": {date}, "pageSize": {"999"}, "isJson": {"-1"}, "isAjax": {"1"}}
 	path := "/iptvepg/frame226/publicPage/datajsp/prevueList.jsp"
 	if api == "prevueListToLive" {
@@ -33,11 +49,15 @@ func (g *Gateway) epgURL(ch Channel, date, api string) string {
 		q.Set("isFristDate", "-1")
 		q.Set("fileds", "-1")
 	}
-	return makeURL(g.epgBase(), path, q)
+	return makeURL(base, path, q), nil
 }
 
-func (g *Gateway) tvodURL(code, channelID string) string {
-	return makeURL(g.epgBase(), "/iptvepg/frame226/publicPage/datajsp/getTVODPlayURL.jsp", url.Values{"programCode": {code}, "channelID": {channelID}, "isJson": {"-1"}, "isAjax": {"1"}})
+func (g *Gateway) tvodURL(code, channelID string) (string, error) {
+	base, err := g.epgBaseRequired()
+	if err != nil {
+		return "", err
+	}
+	return makeURL(base, "/iptvepg/frame226/publicPage/datajsp/getTVODPlayURL.jsp", url.Values{"programCode": {code}, "channelID": {channelID}, "isJson": {"-1"}, "isAjax": {"1"}}), nil
 }
 
 func normalizeProgram(m map[string]any, ch Channel, date string) (*Program, error) {
@@ -93,7 +113,11 @@ func (g *Gateway) fetchPrograms(ch Channel, date string) []Program {
 		}
 	}
 	for _, api := range apis {
-		text, _, err := g.request(http.MethodGet, g.epgURL(ch, date, api), nil, nil, time.Duration(g.cfg.HTTPTimeout)*time.Second)
+		u, err := g.epgURL(ch, date, api)
+		if err != nil {
+			return nil
+		}
+		text, _, err := g.request(http.MethodGet, u, nil, nil, time.Duration(g.cfg.HTTPTimeout)*time.Second)
 		if err == nil {
 			if p := parsePrograms(text, ch, date); len(p) > 0 {
 				return p
@@ -139,7 +163,12 @@ func (g *Gateway) resolvePlayURL(p *Program, force bool) error {
 			return err
 		}
 	}
-	text, _, err := g.request(http.MethodGet, g.tvodURL(p.PrevueCode, p.ChannelID), nil, nil, time.Duration(g.cfg.ResolveTimeout)*time.Second)
+	u, err := g.tvodURL(p.PrevueCode, p.ChannelID)
+	if err != nil {
+		p.PlayURLError = err.Error()
+		return err
+	}
+	text, _, err := g.request(http.MethodGet, u, nil, nil, time.Duration(g.cfg.ResolveTimeout)*time.Second)
 	if err != nil {
 		p.PlayURLError = err.Error()
 		return err
@@ -292,8 +321,9 @@ func (g *Gateway) refreshLocked(ctx context.Context, force bool) error {
 	for r := range results {
 		programs = append(programs, r...)
 	}
-	if len(programs) == 0 {
-		return fmt.Errorf("EPG refresh returned no programs")
+	_, oldProgramCount, _ := g.counts()
+	if err := shouldProtectProgramCache(g.cfg.ProtectOnEmptyRefresh, oldProgramCount, len(programs)); err != nil {
+		return err
 	}
 	sort.Slice(programs, func(i, j int) bool {
 		if programs[i].ChannelName == programs[j].ChannelName {
@@ -311,6 +341,19 @@ func (g *Gateway) refreshLocked(ctx context.Context, force bool) error {
 	_ = g.stateSet("last_refresh_unix", nowLocal().Format(time.RFC3339))
 	g.lastRefreshError = ""
 	log.Printf("refresh complete channels=%d programs=%d catchup=%d", len(channels), len(programs), countCatchup(channels))
+	return nil
+}
+
+func shouldProtectProgramCache(enabled bool, oldCount, newCount int) error {
+	if !enabled {
+		return nil
+	}
+	if newCount == 0 {
+		return fmt.Errorf("EPG refresh returned no programs")
+	}
+	if oldCount > 0 && newCount*2 < oldCount {
+		return fmt.Errorf("EPG refresh program count %d below protected threshold; old cache has %d", newCount, oldCount)
+	}
 	return nil
 }
 

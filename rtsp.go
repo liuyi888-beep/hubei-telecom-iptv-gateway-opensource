@@ -139,7 +139,7 @@ func (s *RTSPRedirectServer) Close() {
 }
 
 func rtspResponse(w *bufio.Writer, code int, reason, cseq string, headers map[string]string) {
-	fmt.Fprintf(w, "RTSP/1.0 %d %s\r\nCSeq: %s\r\nServer: Hubei-IPTV-Gateway-Go/1.0.2\r\n", code, reason, cseq)
+	fmt.Fprintf(w, "RTSP/1.0 %d %s\r\nCSeq: %s\r\nServer: Hubei-IPTV-Gateway-Go/1.0.3\r\n", code, reason, cseq)
 	for k, v := range headers {
 		fmt.Fprintf(w, "%s: %s\r\n", k, v)
 	}

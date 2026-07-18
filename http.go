@@ -92,7 +92,7 @@ func (g *Gateway) statusPayload() map[string]any {
 	cc, pc, _ := g.counts()
 	return map[string]any{
 		"name":    "湖北电信IPTV网关 Go",
-		"version": "1.0.2",
+		"version": "1.0.3",
 		"server": map[string]any{
 			"listen_host":          g.cfg.ListenHost,
 			"listen_port":          g.cfg.ListenPort,
@@ -260,7 +260,7 @@ func (g *Gateway) handler() http.Handler {
 	mux.HandleFunc("/status.json", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, g.statusPayload()) })
 	mux.HandleFunc("/api/auth/status", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, g.authStatus) })
 	mux.HandleFunc("/api/channels", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, g.getChannels())
+		writeJSON(w, 200, channelAPIPayloads(g.getChannels()))
 	})
 	mux.HandleFunc("/diyp/live.txt", func(w http.ResponseWriter, r *http.Request) { textResponse(w, "text/plain", g.diyp()) })
 	mux.HandleFunc("/ku9.m3u", func(w http.ResponseWriter, r *http.Request) { textResponse(w, "audio/x-mpegurl", g.ku9M3U()) })

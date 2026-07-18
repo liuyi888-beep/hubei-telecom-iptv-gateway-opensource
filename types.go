@@ -11,7 +11,7 @@ type Channel struct {
 	Group            string `json:"group"`
 	APIType          string `json:"api_type"`
 	Catchup          bool   `json:"catchup"`
-	TimeshiftURL     string `json:"-"`
+	TimeshiftURL     string `json:"timeshift_url,omitempty"`
 	TimeshiftEnabled bool   `json:"timeshift_enabled"`
 	TimeshiftLength  int    `json:"timeshift_length"`
 	FetchedAt        int64  `json:"fetched_at_ts,omitempty"`

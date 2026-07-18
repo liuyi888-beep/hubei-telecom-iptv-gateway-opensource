@@ -151,39 +151,10 @@ func loadConfig(path string) (Config, error) {
 	if err := json.Unmarshal(stripJSONComments(b), &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
 	}
-	applyLegacyConfig(stripJSONComments(b), &cfg)
 	applyEnv(&cfg)
 	cfg.PublicBaseURL = strings.TrimRight(cfg.PublicBaseURL, "/")
 	cfg.RTSPPublicBaseURL = strings.TrimRight(cfg.RTSPPublicBaseURL, "/")
 	return cfg, nil
-}
-
-func applyLegacyConfig(raw []byte, c *Config) {
-	var legacy struct {
-		ProtectOnEmptyRefresh *bool  `json:"protect_sqlite_on_empty_refresh"`
-		TSRTSPTransport       string `json:"ffmpeg_rtsp_transport"`
-		TSMaxConcurrent       *int   `json:"ffmpeg_max_concurrent"`
-		TSStartTimeout        *int   `json:"ffmpeg_start_timeout_seconds"`
-		TSIdleTimeout         *int   `json:"ffmpeg_idle_timeout_seconds"`
-	}
-	if json.Unmarshal(raw, &legacy) != nil {
-		return
-	}
-	if legacy.ProtectOnEmptyRefresh != nil {
-		c.ProtectOnEmptyRefresh = *legacy.ProtectOnEmptyRefresh
-	}
-	if legacy.TSRTSPTransport != "" {
-		c.TSRTSPTransport = legacy.TSRTSPTransport
-	}
-	if legacy.TSMaxConcurrent != nil {
-		c.TSMaxConcurrent = *legacy.TSMaxConcurrent
-	}
-	if legacy.TSStartTimeout != nil {
-		c.TSStartTimeout = *legacy.TSStartTimeout
-	}
-	if legacy.TSIdleTimeout != nil {
-		c.TSIdleTimeout = *legacy.TSIdleTimeout
-	}
 }
 
 func applyEnv(c *Config) {

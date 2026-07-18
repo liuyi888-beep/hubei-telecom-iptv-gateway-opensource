@@ -1,8 +1,12 @@
 package main
 
 import (
+	"net"
+	"net/http"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseCTCSetConfigAndDocumentLocation(t *testing.T) {
@@ -67,5 +71,26 @@ func TestBuildEPGDiscoveryFromAuthPages(t *testing.T) {
 	}
 	if d.epgParams.Get("UserIP") != "10.233.82.236" || d.epgParams.Get("networkid") != "1" {
 		t.Fatalf("epg params=%v", d.epgParams)
+	}
+}
+
+func TestRequestRawRejectsHTTPErrorStatus(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "backend failed with secret-token", http.StatusForbidden)
+	})}
+	defer server.Close()
+	go func() { _ = server.Serve(ln) }()
+
+	g := &Gateway{cfg: defaultConfig(), http: &http.Client{}}
+	_, _, err = g.requestRaw(http.MethodGet, "http://"+ln.Addr().String(), nil, nil, time.Second)
+	if err == nil || !strings.Contains(err.Error(), "HTTP 403") {
+		t.Fatalf("expected HTTP status error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("error leaked raw body: %v", err)
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
@@ -58,6 +59,15 @@ func newGateway(cfg Config) (*Gateway, error) {
 	}
 	if epgBase, _ := g.stateGet("epg_base"); epgBase != "" {
 		g.epgBaseURL = epgBase
+	}
+	if raw, _ := g.stateGet("auth_status"); raw != "" {
+		var status AuthStatus
+		if json.Unmarshal([]byte(raw), &status) == nil && status.Mode != "" {
+			g.authStatus = status
+			if t, err := time.Parse(time.RFC3339, status.LastLogin); err == nil {
+				g.lastLogin = t
+			}
+		}
 	}
 	return g, nil
 }
