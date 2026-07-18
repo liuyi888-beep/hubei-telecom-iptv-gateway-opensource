@@ -18,10 +18,9 @@ import (
 var errRefreshRunning = errors.New("refresh already running")
 
 func (g *Gateway) epgBase() string {
-	if g.cfg.Auth.EPGBase != "" {
-		return strings.TrimRight(g.cfg.Auth.EPGBase, "/")
-	}
-	return strings.TrimRight(g.cfg.EPGBase, "/")
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return strings.TrimRight(g.epgBaseURL, "/")
 }
 
 func (g *Gateway) epgURL(ch Channel, date, api string) string {

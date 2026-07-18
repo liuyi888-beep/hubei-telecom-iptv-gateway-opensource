@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -116,27 +117,245 @@ func (g *Gateway) request(method, rawURL string, form url.Values, extra map[stri
 	return g.requestWithRelogin(method, rawURL, form, extra, timeout, true)
 }
 
-func (g *Gateway) initEPGSession(token string) ([]Channel, error) {
+type epgDiscovery struct {
+	baseURL       string
+	nextURL       string
+	easipEntryURL string
+	epgEntryURL   string
+	epgBase       string
+	epgParams     url.Values
+	ctcConfig     map[string]string
+}
+
+func newEPGDiscovery(baseURL, authText string) *epgDiscovery {
+	d := &epgDiscovery{baseURL: baseURL, ctcConfig: parseCTCSetConfig(authText)}
+	if next := parseDocumentLocation(authText); next != "" {
+		d.nextURL = resolveReference(baseURL, next)
+	}
+	return d
+}
+
+func (d *epgDiscovery) nextAuthURL() (string, bool) {
+	if d.easipEntryURL != "" || d.nextURL == "" {
+		return "", false
+	}
+	if strings.Contains(d.nextURL, "/iptvepg/function/index.jsp") {
+		d.easipEntryURL = d.nextURL
+		return "", false
+	}
+	return d.nextURL, true
+}
+
+func (d *epgDiscovery) updateFromAuthHop(text, finalURL string) {
+	if next := parseDocumentLocation(text); next != "" {
+		d.nextURL = resolveReference(finalURL, next)
+		if strings.Contains(d.nextURL, "/iptvepg/function/index.jsp") {
+			d.easipEntryURL = d.nextURL
+		}
+	}
+	if d.easipEntryURL == "" && strings.Contains(finalURL, "/iptvepg/function/index.jsp") {
+		d.easipEntryURL = finalURL
+	}
+}
+
+func (d *epgDiscovery) updateFromEASIP(text string) {
+	if next := parseDocumentLocation(text); next != "" {
+		d.epgEntryURL = resolveReference(d.easipEntryURL, next)
+		if u, err := url.Parse(d.epgEntryURL); err == nil {
+			d.epgBase = urlOrigin(u)
+			d.epgParams = u.Query()
+		}
+	}
+}
+
+func parseCTCSetConfig(text string) map[string]string {
+	text = html.UnescapeString(text)
+	out := map[string]string{}
+	re := regexp.MustCompile(`(?is)CTCSetConfig\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]*)['"]\s*\)`)
+	for _, m := range re.FindAllStringSubmatch(text, -1) {
+		if len(m) > 2 {
+			out[strings.TrimSpace(m[1])] = strings.TrimSpace(m[2])
+		}
+	}
+	return out
+}
+
+func parseDocumentLocation(text string) string {
+	text = html.UnescapeString(text)
+	var urls []string
+	for _, re := range []*regexp.Regexp{
+		regexp.MustCompile(`(?is)(?:top\.)?document\.location\s*=\s*['"]([^'"]+)['"]`),
+		regexp.MustCompile(`(?is)window\.location\s*=\s*['"]([^'"]+)['"]`),
+	} {
+		for _, m := range re.FindAllStringSubmatch(text, -1) {
+			if len(m) > 1 {
+				urls = append(urls, strings.TrimSpace(m[1]))
+			}
+		}
+	}
+	for _, u := range urls {
+		if strings.Contains(u, "/iptvepg/function/index.jsp") {
+			return u
+		}
+	}
+	if len(urls) > 0 {
+		return urls[0]
+	}
+	return ""
+}
+
+func parseHiddenInputs(text, formName string) url.Values {
+	text = html.UnescapeString(text)
+	source := text
+	reAttrTag := regexp.MustCompile(`(?is)([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))`)
+	if formName != "" {
+		reForm := regexp.MustCompile(`(?is)<form\b([^>]*)>(.*?)</form>`)
+		source = ""
+		for _, m := range reForm.FindAllStringSubmatch(text, -1) {
+			attrs := map[string]string{}
+			for _, a := range reAttrTag.FindAllStringSubmatch(m[1], -1) {
+				if len(a) > 4 {
+					attrs[strings.ToLower(a[1])] = a[2] + a[3] + a[4]
+				}
+			}
+			if attrs["name"] == formName {
+				source = m[2]
+				break
+			}
+		}
+		if source == "" {
+			return url.Values{}
+		}
+	}
+	values := url.Values{}
+	reInput := regexp.MustCompile(`(?is)<input\b[^>]*>`)
+	for _, tag := range reInput.FindAllString(source, -1) {
+		attrs := map[string]string{}
+		for _, m := range reAttrTag.FindAllStringSubmatch(tag, -1) {
+			if len(m) > 4 {
+				attrs[strings.ToLower(m[1])] = m[2] + m[3] + m[4]
+			}
+		}
+		name := attrs["name"]
+		if name != "" {
+			values.Set(name, attrs["value"])
+		}
+	}
+	return values
+}
+
+func resolveReference(baseURL, ref string) string {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return ref
+	}
+	u, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+	return base.ResolveReference(u).String()
+}
+
+func urlOrigin(u *url.URL) string {
+	if u == nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+func (g *Gateway) authRequest(method, rawURL string, form url.Values, timeout time.Duration) (string, string, error) {
+	return g.requestWithRelogin(method, rawURL, form, map[string]string{"User-Agent": "webkit;Resolution(PAL,720P,1080P)"}, timeout, false)
+}
+
+func (g *Gateway) initEPGSession(token, authText, authAction string) ([]Channel, error) {
 	a := g.cfg.Auth
 	timeout := time.Duration(g.cfg.AuthTimeout) * time.Second
 	texts := []string{}
-	call := func(method, base, path string, q url.Values, form url.Values) {
-		u := makeURL(base, path, q)
-		text, _, err := g.request(method, u, form, map[string]string{"User-Agent": "webkit;Resolution(PAL,720P,1080P)"}, timeout)
-		if err == nil {
-			texts = append(texts, text)
+	d := newEPGDiscovery(authAction, authText)
+	for i := 0; i < 4; i++ {
+		next, ok := d.nextAuthURL()
+		if !ok {
+			break
+		}
+		text, final, err := g.authRequest(http.MethodGet, next, nil, timeout)
+		if err != nil {
+			return nil, err
+		}
+		texts = append(texts, text)
+		d.updateFromAuthHop(text, final)
+	}
+	if d.easipEntryURL == "" {
+		epgDomain := strings.TrimSpace(d.ctcConfig["EPGDomain"])
+		if epgDomain != "" {
+			q := url.Values{"UserToken": {token}, "UserID": {a.UserID}, "STBID": {a.STBID}}
+			if v := strings.TrimSpace(d.ctcConfig["UserGroupNMB"]); v != "" {
+				q.Set("UserGroupNMB", v)
+			}
+			if v := strings.TrimSpace(d.ctcConfig["EPGGroupNMB"]); v != "" {
+				q.Set("EPGGroupNMB", v)
+			}
+			u, err := url.Parse(epgDomain)
+			if err == nil {
+				base := urlOrigin(u)
+				d.easipEntryURL = makeURL(base, u.Path, q)
+			}
 		}
 	}
-	call(http.MethodGet, a.EASIPBase, "/iptvepg/function/index.jsp", url.Values{
-		"UserGroupNMB": {a.UserGroupNMB}, "EPGGroupNMB": {a.EPGGroupNMB}, "UserToken": {token}, "UserID": {a.UserID}, "STBID": {a.STBID}, "DynamicAuthIP": {a.DynamicAuthIP}}, nil)
-	call(http.MethodGet, a.EPGBase, "/iptvepg/function/index.jsp", url.Values{
-		"loadbalanced": {"1"}, "UserIP": {a.EPGUserIP}, "UserID": {a.UserID}, "UserToken": {token}, "STBID": {a.STBID}, "LastTermno": {""}, "easip": {a.EASIP}, "networkid": {a.NetworkID}}, nil)
-	call(http.MethodPost, a.EPGBase, "/iptvepg/function/funcportalauth.jsp", nil, url.Values{
-		"UserToken": {token}, "UserID": {a.UserID}, "STBID": {a.STBID}, "stbinfo": {""}, "prmid": {""}, "easip": {a.EASIP}, "networkid": {a.NetworkID}, "stbtype": {a.STBType}, "drmsupplier": {""}})
-	call(http.MethodGet, a.EPGBase, "/iptvepg/js/setConfig.js", nil, nil)
-	call(http.MethodGet, a.EPGBase, "/iptvepg/function/frame.jsp", nil, nil)
-	call(http.MethodPost, a.EPGBase, "/iptvepg/function/frameset_judger.jsp", nil, url.Values{"picturetype": {"1,3,5"}})
-	call(http.MethodPost, a.EPGBase, "/iptvepg/function/frameset_builder.jsp", nil, url.Values{"MAIN_WIN_SRC": {a.MainWinSrc}, "NEED_UPDATE_STB": {"1"}, "BUILD_ACTION": {"FRAMESET_BUILDER"}, "hdmistatus": {"undefined"}})
+	if d.easipEntryURL == "" {
+		return nil, fmt.Errorf("EPG service entry not found")
+	}
+	text, _, err := g.authRequest(http.MethodGet, d.easipEntryURL, nil, timeout)
+	if err != nil {
+		return nil, err
+	}
+	texts = append(texts, text)
+	d.updateFromEASIP(text)
+	if d.epgEntryURL == "" || d.epgBase == "" {
+		return nil, fmt.Errorf("EPG entry not found")
+	}
+	g.setEPGBase(d.epgBase)
+	_ = g.stateSet("epg_base", g.epgBase())
+	epgIndexText, _, err := g.authRequest(http.MethodGet, d.epgEntryURL, nil, timeout)
+	if err != nil {
+		return nil, err
+	}
+	texts = append(texts, epgIndexText)
+	portalForm := parseHiddenInputs(epgIndexText, "authform")
+	if len(portalForm) == 0 {
+		return nil, fmt.Errorf("authform not found")
+	}
+	callEPG := func(method, path string, form url.Values) error {
+		text, _, err := g.authRequest(method, makeURL(d.epgBase, path, nil), form, timeout)
+		if err != nil {
+			return err
+		}
+		texts = append(texts, text)
+		return nil
+	}
+	if err := callEPG(http.MethodPost, "/iptvepg/function/funcportalauth.jsp", portalForm); err != nil {
+		return nil, err
+	}
+	if err := callEPG(http.MethodGet, "/iptvepg/js/setConfig.js", nil); err != nil {
+		return nil, err
+	}
+	if err := callEPG(http.MethodGet, "/iptvepg/function/frame.jsp", nil); err != nil {
+		return nil, err
+	}
+	judgerText, _, err := g.authRequest(http.MethodPost, makeURL(d.epgBase, "/iptvepg/function/frameset_judger.jsp", nil), url.Values{"picturetype": {"1,3,5"}}, timeout)
+	if err != nil {
+		return nil, err
+	}
+	texts = append(texts, judgerText)
+	builderForm := parseHiddenInputs(judgerText, "mainWinSrcForm")
+	if len(builderForm) == 0 {
+		return nil, fmt.Errorf("mainWinSrcForm not found")
+	}
+	if builderForm.Get("hdmistatus") == "" {
+		builderForm.Set("hdmistatus", "undefined")
+	}
+	if err := callEPG(http.MethodPost, "/iptvepg/function/frameset_builder.jsp", builderForm); err != nil {
+		return nil, err
+	}
 	channels := parseChannelConfigs(strings.Join(texts, "\n"), g.cfg.LiveURLFormat)
 	if len(channels) == 0 {
 		return nil, fmt.Errorf("portal returned no channels")
@@ -180,8 +399,12 @@ func parseChannelConfigs(text, format string) []Channel {
 		length, _ := strconv.Atoi(attrs["TimeShiftLength"])
 		timeshiftURL := strings.TrimSpace(attrs["TimeShiftURL"])
 		timeshiftEnabled := attrs["TimeShift"] == "1"
+		fcc := ""
+		if attrs["FCCEnable"] == "1" && attrs["ChannelFCCIP"] != "" && attrs["ChannelFCCPort"] != "" {
+			fcc = attrs["ChannelFCCIP"] + ":" + attrs["ChannelFCCPort"]
+		}
 		ch := Channel{ID: id, Name: name, Index: attrs["UserChannelID"], LiveURL: normalizeLiveURL(igmp, format), Group: guessGroup(name), APIType: guessEPGAPI(name),
-			Catchup: timeshiftEnabled && strings.HasPrefix(timeshiftURL, "rtsp://"), TimeshiftURL: timeshiftURL, TimeshiftEnabled: timeshiftEnabled, TimeshiftLength: length}
+			Catchup: timeshiftEnabled && strings.HasPrefix(timeshiftURL, "rtsp://"), TimeshiftURL: timeshiftURL, TimeshiftEnabled: timeshiftEnabled, TimeshiftLength: length, FCC: fcc}
 		out = append(out, ch)
 	}
 	sort.Slice(out, func(i, j int) bool {

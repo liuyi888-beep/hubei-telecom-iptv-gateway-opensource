@@ -9,24 +9,13 @@ import (
 )
 
 type AuthConfig struct {
-	Enabled       bool   `json:"enabled"`
-	UserID        string `json:"user_id"`
-	Password      string `json:"password"`
-	STBID         string `json:"stbid"`
-	AuthIP        string `json:"auth_ip"`
-	MAC           string `json:"mac"`
-	EPGUserIP     string `json:"epg_user_ip"`
-	DynamicAuthIP string `json:"dynamic_auth_ip"`
-	PlatformBase  string `json:"platform_base"`
-	AuthBase      string `json:"auth_base"`
-	EASIPBase     string `json:"easip_base"`
-	EPGBase       string `json:"epg_base"`
-	EASIP         string `json:"easip"`
-	NetworkID     string `json:"networkid"`
-	UserGroupNMB  string `json:"user_group_nmb"`
-	EPGGroupNMB   string `json:"epg_group_nmb"`
-	STBType       string `json:"stbtype"`
-	MainWinSrc    string `json:"main_win_src"`
+	Enabled      bool   `json:"enabled"`
+	UserID       string `json:"user_id"`
+	Password     string `json:"password"`
+	STBID        string `json:"stbid"`
+	AuthIP       string `json:"auth_ip"`
+	MAC          string `json:"mac"`
+	PlatformBase string `json:"platform_base"`
 }
 
 type Config struct {
@@ -75,7 +64,6 @@ type Config struct {
 	HTTPUserAgent   string            `json:"http_user_agent"`
 	Headers         map[string]string `json:"headers"`
 	Cookie          string            `json:"cookie"`
-	EPGBase         string            `json:"epg_base"`
 	RTSPUserAgent   string            `json:"rtsp_user_agent"`
 	TSRTSPTransport string            `json:"ts_rtsp_transport"`
 	TSMaxConcurrent int               `json:"ts_max_concurrent"`
@@ -101,16 +89,12 @@ func defaultConfig() Config {
 		PlayURLAuthCheckSeconds: 3600, ProtectOnEmptyRefresh: true,
 		ResolvePlayURL: true, AutoRebuildSession: true,
 		EPGAutoTryAltAPI: true, LiveURLFormat: "rtp",
-		HTTPUserAgent: "Mozilla/5.0 (Linux; U; Android 4.4.2; zh-cn) AppleWebKit/534.30 IPTV",
-		Headers:       map[string]string{}, EPGBase: "http://121.60.129.244:8080",
+		HTTPUserAgent:   "Mozilla/5.0 (Linux; U; Android 4.4.2; zh-cn) AppleWebKit/534.30 IPTV",
+		Headers:         map[string]string{},
 		RTSPUserAgent:   "HMTL RTSP 1.0; CTC/2.0",
 		TSRTSPTransport: "udp",
 		TSMaxConcurrent: 3, TSStartTimeout: 15, TSIdleTimeout: 20,
-		Auth: AuthConfig{Enabled: true, PlatformBase: "http://121.60.255.6:8080",
-			AuthBase: "http://121.60.255.36:4338", EASIPBase: "http://121.60.255.4:8080",
-			EPGBase: "http://121.60.129.244:8080", EASIP: "121.60.255.4", NetworkID: "1",
-			UserGroupNMB: "73", EPGGroupNMB: "0", STBType: "TY1613",
-			MainWinSrc: "/iptvepg/frame234/portal.jsp"},
+		Auth: AuthConfig{Enabled: true, PlatformBase: "http://121.60.255.6:8080"},
 	}
 }
 
@@ -171,9 +155,6 @@ func loadConfig(path string) (Config, error) {
 	applyEnv(&cfg)
 	cfg.PublicBaseURL = strings.TrimRight(cfg.PublicBaseURL, "/")
 	cfg.RTSPPublicBaseURL = strings.TrimRight(cfg.RTSPPublicBaseURL, "/")
-	if cfg.Auth.EPGBase == "" {
-		cfg.Auth.EPGBase = cfg.EPGBase
-	}
 	return cfg, nil
 }
 
@@ -236,8 +217,7 @@ func applyEnv(c *Config) {
 	setString("STBID", &c.Auth.STBID)
 	setString("MAC", &c.Auth.MAC)
 	setString("AUTH_IP", &c.Auth.AuthIP)
-	setString("EPG_USER_IP", &c.Auth.EPGUserIP)
-	setString("DYNAMIC_AUTH_IP", &c.Auth.DynamicAuthIP)
+	setString("PLATFORM_BASE", &c.Auth.PlatformBase)
 }
 
 func (c Config) publicBaseURL() string {

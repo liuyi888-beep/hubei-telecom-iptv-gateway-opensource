@@ -92,7 +92,7 @@ func (g *Gateway) statusPayload() map[string]any {
 	cc, pc, _ := g.counts()
 	return map[string]any{
 		"name":    "湖北电信IPTV网关 Go",
-		"version": "1.0.1",
+		"version": "1.0.2",
 		"server": map[string]any{
 			"listen_host":          g.cfg.ListenHost,
 			"listen_port":          g.cfg.ListenPort,

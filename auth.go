@@ -158,7 +158,7 @@ func (g *Gateway) fullLoginWithChannels(updateChannels bool) error {
 	}
 	a := g.cfg.Auth
 	missing := []string{}
-	for k, v := range map[string]string{"user_id": a.UserID, "password": a.Password, "stbid": a.STBID, "auth_ip": a.AuthIP, "mac": a.MAC, "epg_user_ip": a.EPGUserIP, "dynamic_auth_ip": a.DynamicAuthIP} {
+	for k, v := range map[string]string{"user_id": a.UserID, "password": a.Password, "stbid": a.STBID, "auth_ip": a.AuthIP, "mac": a.MAC, "platform_base": a.PlatformBase} {
 		if v == "" || strings.Contains(v, "请填") {
 			missing = append(missing, k)
 		}
@@ -176,7 +176,7 @@ func (g *Gateway) fullLoginWithChannels(updateChannels bool) error {
 		return fmt.Errorf("EncryptToken not found")
 	}
 	if action == "" {
-		action = strings.TrimRight(a.AuthBase, "/") + "/GetUserToken"
+		return fmt.Errorf("GetUserToken action not found")
 	} else if u, e := url.Parse(final); e == nil {
 		if ref, re := url.Parse(action); re == nil {
 			action = u.ResolveReference(ref).String()
@@ -201,7 +201,7 @@ func (g *Gateway) fullLoginWithChannels(updateChannels bool) error {
 		return fmt.Errorf("UserToken not found: %s", preview)
 	}
 	g.userToken = token
-	channels, err := g.initEPGSession(token)
+	channels, err := g.initEPGSession(token, text, action)
 	if err != nil {
 		return err
 	}

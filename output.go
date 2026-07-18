@@ -33,16 +33,51 @@ func (g *Gateway) httpTSCatchup(c Channel) string {
 	return g.cfg.publicBaseURL() + "/catchup.ts?channel_id=" + url.QueryEscape(c.ID) + "&time_mode=" + mode + "&start=" + a + "&end=" + b
 }
 
+func uniqueChannelDisplayNames(channels []Channel) map[string]string {
+	seen := map[string]int{}
+	out := map[string]string{}
+	for _, c := range channels {
+		name := strings.TrimSpace(c.Name)
+		if name == "" {
+			continue
+		}
+		seen[name]++
+		display := name
+		if seen[name] > 1 {
+			suffix := strings.TrimSpace(c.Index)
+			if suffix == "" {
+				suffix = fmt.Sprint(seen[name])
+			}
+			display = fmt.Sprintf("%s [%s]", name, suffix)
+		}
+		out[c.ID] = display
+	}
+	return out
+}
+
+func rtp2LiveURL(c Channel) string {
+	if c.FCC == "" || !strings.HasPrefix(c.LiveURL, "rtp://") {
+		return c.LiveURL
+	}
+	if strings.Contains(c.LiveURL, "?") {
+		return c.LiveURL + "&fcc=" + c.FCC
+	}
+	return strings.TrimRight(c.LiveURL, "/") + "/?fcc=" + c.FCC
+}
+
 func (g *Gateway) ku9M3U() string {
 	lines := []string{fmt.Sprintf(`#EXTM3U x-tvg-url="%s"`, g.epgURLPublic())}
-	for _, c := range g.getChannels() {
+	channels := g.getChannels()
+	names := uniqueChannelDisplayNames(channels)
+	for _, c := range channels {
 		if c.Name == "" || c.LiveURL == "" {
 			continue
 		}
+		name := names[c.ID]
 		if c.Catchup {
-			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s" catchup="default" catchup-source="%s",%s`, c.ID, c.Name, c.Group, g.ku9Catchup(c), c.Name))
+			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s" catchup="default" catchup-source="%s",%s`, c.ID, name, c.Group, g.ku9Catchup(c), name))
 		} else {
-			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s",%s`, c.ID, c.Name, c.Group, c.Name))
+			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s",%s`, c.ID, name, c.Group, name))
 		}
 		lines = append(lines, c.LiveURL, "")
 	}
@@ -51,16 +86,19 @@ func (g *Gateway) ku9M3U() string {
 
 func (g *Gateway) rtp2M3U() string {
 	lines := []string{fmt.Sprintf(`#EXTM3U x-tvg-url="%s"`, g.epgURLPublic())}
-	for _, c := range g.getChannels() {
+	channels := g.getChannels()
+	names := uniqueChannelDisplayNames(channels)
+	for _, c := range channels {
 		if c.Name == "" || c.LiveURL == "" {
 			continue
 		}
+		name := names[c.ID]
 		if c.Catchup {
-			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s" catchup="default" catchup-days="%d" catchup-source="%s",%s`, c.ID, c.Name, c.Group, g.cfg.CatchupDays, g.httpTSCatchup(c), c.Name))
+			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s" catchup="default" catchup-days="%d" catchup-source="%s",%s`, c.ID, name, c.Group, g.cfg.CatchupDays, g.httpTSCatchup(c), name))
 		} else {
-			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s",%s`, c.ID, c.Name, c.Group, c.Name))
+			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-name="%s" group-title="%s",%s`, c.ID, name, c.Group, name))
 		}
-		lines = append(lines, c.LiveURL, "")
+		lines = append(lines, rtp2LiveURL(c), "")
 	}
 	return strings.Join(lines, "\n") + "\n"
 }

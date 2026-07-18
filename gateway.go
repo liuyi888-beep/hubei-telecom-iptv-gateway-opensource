@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/cookiejar"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ type Gateway struct {
 	authStatus       AuthStatus
 	userToken        string
 	lastLogin        time.Time
+	epgBaseURL       string
 	lastRefreshError string
 	refreshState     RefreshState
 	tsSem            chan struct{}
@@ -54,6 +56,9 @@ func newGateway(cfg Config) (*Gateway, error) {
 	if token, _ := g.stateGet("user_token"); token != "" {
 		g.userToken = token
 	}
+	if epgBase, _ := g.stateGet("epg_base"); epgBase != "" {
+		g.epgBaseURL = epgBase
+	}
 	return g, nil
 }
 
@@ -76,6 +81,12 @@ func (g *Gateway) setChannels(ch []Channel) {
 	sortChannels(ch)
 	g.mu.Lock()
 	g.channels = ch
+	g.mu.Unlock()
+}
+
+func (g *Gateway) setEPGBase(epgBase string) {
+	g.mu.Lock()
+	g.epgBaseURL = strings.TrimRight(epgBase, "/")
 	g.mu.Unlock()
 }
 

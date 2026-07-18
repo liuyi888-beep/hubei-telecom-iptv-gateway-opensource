@@ -7,6 +7,7 @@ type Channel struct {
 	Name             string `json:"name"`
 	Index            string `json:"channel_index"`
 	LiveURL          string `json:"live_url"`
+	FCC              string `json:"fcc,omitempty"`
 	Group            string `json:"group"`
 	APIType          string `json:"api_type"`
 	Catchup          bool   `json:"catchup"`

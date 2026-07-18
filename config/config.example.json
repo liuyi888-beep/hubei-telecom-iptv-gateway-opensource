@@ -1,7 +1,8 @@
 {
   "listen_host": "0.0.0.0",
   "listen_port": 8899,
-  "public_base_url": "http://你的宿主机IP:8899",
+  // 必填：改成运行本程序的网关/NAS 局域网地址，例如 http://192.168.10.12:8899
+  "public_base_url": "http://YOUR_GATEWAY_IP:8899",
   "data_dir": "data",
   "background_refresh_enabled": true,
   "refresh_interval_hours": 24,
@@ -15,7 +16,8 @@
   "rtsp_redirect_enabled": true,
   "rtsp_listen_host": "0.0.0.0",
   "rtsp_listen_port": 8555,
-  "rtsp_public_base_url": "rtsp://你的宿主机IP:8555",
+  // 必填：改成运行本程序的网关/NAS 局域网地址，例如 rtsp://192.168.10.12:8555
+  "rtsp_public_base_url": "rtsp://YOUR_GATEWAY_IP:8555",
   "rtsp_client_timeout_seconds": 15,
   "rtsp_redirect_timeout_seconds": 8,
   "rtsp_redirect_max_hops": 4,
@@ -28,22 +30,17 @@
   "ts_idle_timeout_seconds": 20,
   "auth": {
     "enabled": true,
-    "user_id": "你的iptv账号，进机顶盒设置，认证信息，业务信息可查看",
-    "password": "你的iptv密码，进机顶盒设置，认证信息，业务信息可查看",
-    "stbid": "你的机顶盒STBID，机顶盒标签上可查看",
-    "mac": "你的机顶盒MACMAC，机顶盒标签上可查看，例如：78:71:04:**:**:**",
-    "auth_ip": "你的iptv通过PPPOE拨号获取的IP地址，例如10.233.***.***",
-    "epg_user_ip": "你的iptv通过PPPOE拨号获取的IP地址，例如10.233.***.*** ",
-    "dynamic_auth_ip": "你的iptv通过PPPOE拨号获取的IP地址，例如10.233.***.***",
-    "platform_base": "http://121.60.255.6:8080",
-    "auth_base": "http://121.60.255.36:4338",
-    "easip_base": "http://121.60.255.4:8080",
-    "epg_base": "http://121.60.129.244:8080",
-    "easip": "121.60.255.4",
-    "networkid": "1",
-    "user_group_nmb": "73",
-    "epg_group_nmb": "0",
-    "stbtype": "TY1613",
-    "main_win_src": "/iptvepg/frame234/portal.jsp"
+    // 必填：IPTV 账号
+    "user_id": "YOUR_IPTV_USER_ID",
+    // 必填：IPTV 密码
+    "password": "YOUR_IPTV_PASSWORD",
+    // 必填：机顶盒 STBID
+    "stbid": "YOUR_STBID",
+    // 必填：机顶盒 MAC，建议使用小写冒号格式
+    "mac": "YOUR_STB_MAC",
+    // 必填：IPTV 业务侧 IP，通常类似 10.x.x.x，填 NAS 的局域网 IP也行，这个不重要
+    "auth_ip": "YOUR_IPTV_SERVICE_IP",
+    // 一般不用改：湖北电信 IPTV Portal 平台入口
+    "platform_base": "http://121.60.255.6:8080"
   }
 }
