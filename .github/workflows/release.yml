@@ -1,0 +1,54 @@
+name: 发布镜像包
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 构建镜像
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          IMAGE="hubei-telecom-iptv-gateway-go:${VERSION}"
+          ARCHIVE="hubei-telecom-iptv-gateway-go-${VERSION}.tar"
+          docker build --tag "$IMAGE" .
+          docker save --output "$ARCHIVE" "$IMAGE"
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+          {
+            echo "# 湖北电信 IPTV 网关 Go ${VERSION}"
+            echo
+            echo "## 更新内容"
+            echo
+            echo "- 认证流程统一为单一登录逻辑，登录失效后自动重新登录并重试一次请求。"
+            echo "- 认证状态只保存在运行内存中，启动时自动清除旧认证缓存。"
+            echo "- 状态接口统一为 /status.json，示例配置和部署文档已更新。"
+            echo
+            echo "## 部署"
+            echo
+            echo '```bash'
+            echo "docker load -i $ARCHIVE"
+            echo "docker compose up -d"
+            echo '```'
+          } > RELEASE_NOTES.md
+
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "湖北电信 IPTV 网关 Go ${GITHUB_REF_NAME}" \
+            --notes-file RELEASE_NOTES.md \
+            hubei-telecom-iptv-gateway-go-*.tar \
+            hubei-telecom-iptv-gateway-go-*.tar.sha256

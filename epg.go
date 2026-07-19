@@ -158,11 +158,6 @@ func (g *Gateway) resolvePlayURL(p *Program, force bool) error {
 	if p.PlayURL != "" && !force {
 		return nil
 	}
-	if g.cfg.ProactiveBeforePlayURL && (g.lastLogin.IsZero() || time.Since(g.lastLogin) > time.Duration(g.cfg.PlayURLAuthCheckSeconds)*time.Second) {
-		if err := g.renewLogin(); err != nil {
-			return err
-		}
-	}
 	u, err := g.tvodURL(p.PrevueCode, p.ChannelID)
 	if err != nil {
 		p.PlayURLError = err.Error()
@@ -278,11 +273,15 @@ func (g *Gateway) refreshLocked(ctx context.Context, force bool) error {
 			return nil
 		}
 	}
-	if err := g.fullLogin(); err != nil {
+	portalText, err := g.login()
+	if err != nil {
 		g.lastRefreshError = err.Error()
 		return err
 	}
-	channels := g.getChannels()
+	channels := parseChannelConfigs(portalText, g.cfg.LiveURLFormat)
+	if len(channels) == 0 {
+		return fmt.Errorf("portal returned no channels")
+	}
 	dates := datesAround(g.cfg.DaysBack, g.cfg.DaysForward, g.cfg.IncludeToday)
 	log.Printf("refresh EPG channels=%d dates=%d", len(channels), len(dates))
 	type job struct {

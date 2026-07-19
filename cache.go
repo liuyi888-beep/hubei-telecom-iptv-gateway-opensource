@@ -223,6 +223,12 @@ func (g *Gateway) stateGet(key string) (string, error) {
 	return string(raw), nil
 }
 
+func (g *Gateway) stateDelete(key string) error {
+	return g.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(bucketState).Delete([]byte(key))
+	})
+}
+
 func (g *Gateway) counts() (int, int, error) {
 	var channels, programs int
 	err := g.db.View(func(tx *bolt.Tx) error {

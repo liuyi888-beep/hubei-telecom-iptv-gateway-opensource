@@ -40,15 +40,18 @@ func TestChannelCachePersistsTimeshiftURLAndFCC(t *testing.T) {
 	}
 }
 
-func TestGatewayRestoresAuthStatusAndLastLogin(t *testing.T) {
+func TestGatewayIgnoresCachedAuthenticationState(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.DataDir = t.TempDir()
 	g, err := newGateway(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	status := AuthStatus{OK: true, Mode: "full_login", Message: "login ok", UserTokenLength: 32, LastLogin: "2026-07-19T01:26:46+08:00"}
+	status := AuthStatus{OK: true, Message: "login ok", LastLogin: "2026-07-19T01:26:46+08:00"}
 	if err := g.stateSet("auth_status", status); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.stateSet("user_token", "stale-token"); err != nil {
 		t.Fatal(err)
 	}
 	if err := g.close(); err != nil {
@@ -60,8 +63,45 @@ func TestGatewayRestoresAuthStatusAndLastLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer g2.close()
-	if !g2.authStatus.OK || g2.authStatus.LastLogin != status.LastLogin || g2.lastLogin.IsZero() {
-		t.Fatalf("authStatus=%+v lastLogin=%v", g2.authStatus, g2.lastLogin)
+	if snapshot := g2.authSnapshot(); snapshot.OK || snapshot.Message != "not logged in" {
+		t.Fatalf("auth snapshot=%+v", snapshot)
+	}
+	if !g2.lastLogin.IsZero() {
+		t.Fatalf("lastLogin restored from cache: %v", g2.lastLogin)
+	}
+	for _, key := range []string{"auth_status", "user_token"} {
+		value, err := g2.stateGet(key)
+		if err != nil {
+			t.Fatalf("read %s: %v", key, err)
+		}
+		if value != "" {
+			t.Fatalf("legacy state %s was not removed: %q", key, value)
+		}
+	}
+}
+
+func TestAuthSnapshotExpiresAfterTTL(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.AuthSessionTTLSeconds = 60
+	g := &Gateway{
+		cfg:        cfg,
+		authStatus: AuthStatus{OK: true, Message: "login ok", LastLogin: nowLocal().Add(-2 * time.Minute).Format(time.RFC3339)},
+		lastLogin:  nowLocal().Add(-2 * time.Minute),
+	}
+	if snapshot := g.authSnapshot(); snapshot.OK || snapshot.Message != "session expired" {
+		t.Fatalf("auth snapshot=%+v", snapshot)
+	}
+}
+
+func TestAuthSnapshotFormatsLastLoginFromRuntimeTime(t *testing.T) {
+	loggedInAt := nowLocal().Add(-time.Minute).Truncate(time.Second)
+	g := &Gateway{
+		cfg:        defaultConfig(),
+		authStatus: AuthStatus{OK: true, Message: "login ok"},
+		lastLogin:  loggedInAt,
+	}
+	if got := g.authSnapshot().LastLogin; got != loggedInAt.Format(time.RFC3339) {
+		t.Fatalf("last_login=%q, want %q", got, loggedInAt.Format(time.RFC3339))
 	}
 }
 

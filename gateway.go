@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
@@ -24,7 +23,6 @@ type Gateway struct {
 	refreshStateMu   sync.Mutex
 	channels         []Channel
 	authStatus       AuthStatus
-	userToken        string
 	lastLogin        time.Time
 	epgBaseURL       string
 	lastRefreshError string
@@ -45,31 +43,52 @@ func newGateway(cfg Config) (*Gateway, error) {
 	g := &Gateway{
 		cfg:        cfg,
 		http:       &http.Client{Jar: jar, Timeout: time.Duration(cfg.HTTPTimeout) * time.Second},
-		authStatus: AuthStatus{Mode: "init", Message: "not checked"},
+		authStatus: AuthStatus{Message: "not logged in"},
 		tsSem:      make(chan struct{}, max(1, cfg.TSMaxConcurrent)),
 	}
 	if err := g.openCache(); err != nil {
 		return nil, err
 	}
+	for _, key := range []string{"auth_status", "user_token"} {
+		if err := g.stateDelete(key); err != nil {
+			_ = g.close()
+			return nil, err
+		}
+	}
 	if ch, err := g.loadChannels(context.Background()); err == nil {
 		g.channels = ch
-	}
-	if token, _ := g.stateGet("user_token"); token != "" {
-		g.userToken = token
 	}
 	if epgBase, _ := g.stateGet("epg_base"); epgBase != "" {
 		g.epgBaseURL = epgBase
 	}
-	if raw, _ := g.stateGet("auth_status"); raw != "" {
-		var status AuthStatus
-		if json.Unmarshal([]byte(raw), &status) == nil && status.Mode != "" {
-			g.authStatus = status
-			if t, err := time.Parse(time.RFC3339, status.LastLogin); err == nil {
-				g.lastLogin = t
-			}
-		}
-	}
 	return g, nil
+}
+
+func (g *Gateway) authSnapshot() AuthStatus {
+	g.mu.RLock()
+	status := g.authStatus
+	lastLogin := g.lastLogin
+	ttlSeconds := g.cfg.AuthSessionTTLSeconds
+	g.mu.RUnlock()
+	if !lastLogin.IsZero() {
+		status.LastLogin = lastLogin.Format(time.RFC3339)
+	}
+	if !status.OK {
+		return status
+	}
+	if ttlSeconds <= 0 {
+		ttlSeconds = 3600
+	}
+	if lastLogin.IsZero() {
+		status.OK = false
+		status.Message = "not logged in"
+		return status
+	}
+	if time.Since(lastLogin) >= time.Duration(ttlSeconds)*time.Second {
+		status.OK = false
+		status.Message = "session expired"
+	}
+	return status
 }
 
 func (g *Gateway) close() error {

@@ -9,7 +9,6 @@ import (
 )
 
 type AuthConfig struct {
-	Enabled      bool   `json:"enabled"`
 	UserID       string `json:"user_id"`
 	Password     string `json:"password"`
 	STBID        string `json:"stbid"`
@@ -52,18 +51,14 @@ type Config struct {
 	RTSPRedirectTimeout int    `json:"rtsp_redirect_timeout_seconds"`
 	RTSPRedirectMaxHops int    `json:"rtsp_redirect_max_hops"`
 
-	ProactiveLoginEnabled   bool   `json:"proactive_login_enabled"`
-	ProactiveBeforePlayURL  bool   `json:"proactive_login_before_playurl"`
-	PlayURLAuthCheckSeconds int    `json:"playurl_auth_check_interval_seconds"`
-	ProtectOnEmptyRefresh   bool   `json:"protect_cache_on_empty_refresh"`
-	ResolvePlayURL          bool   `json:"resolve_play_url"`
-	AutoRebuildSession      bool   `json:"auto_rebuild_session"`
-	EPGAutoTryAltAPI        bool   `json:"epg_auto_try_alt_api"`
-	LiveURLFormat           string `json:"live_url_format"`
+	AuthSessionTTLSeconds int    `json:"auth_session_ttl_seconds"`
+	ProtectOnEmptyRefresh bool   `json:"protect_cache_on_empty_refresh"`
+	ResolvePlayURL        bool   `json:"resolve_play_url"`
+	EPGAutoTryAltAPI      bool   `json:"epg_auto_try_alt_api"`
+	LiveURLFormat         string `json:"live_url_format"`
 
 	HTTPUserAgent   string            `json:"http_user_agent"`
 	Headers         map[string]string `json:"headers"`
-	Cookie          string            `json:"cookie"`
 	RTSPUserAgent   string            `json:"rtsp_user_agent"`
 	TSRTSPTransport string            `json:"ts_rtsp_transport"`
 	TSMaxConcurrent int               `json:"ts_max_concurrent"`
@@ -85,16 +80,15 @@ func defaultConfig() Config {
 		NearbyProgramsSpanHours: 8, CatchupPlaceholderMode: "utc", CatchupLogSize: 100,
 		RTSPRedirectEnabled: true, RTSPListenHost: "0.0.0.0", RTSPListenPort: 8555,
 		RTSPClientTimeout: 15, RTSPRedirectTimeout: 8, RTSPRedirectMaxHops: 4,
-		ProactiveLoginEnabled: true, ProactiveBeforePlayURL: true,
-		PlayURLAuthCheckSeconds: 3600, ProtectOnEmptyRefresh: true,
-		ResolvePlayURL: true, AutoRebuildSession: true,
+		AuthSessionTTLSeconds: 3600, ProtectOnEmptyRefresh: true,
+		ResolvePlayURL:   true,
 		EPGAutoTryAltAPI: true, LiveURLFormat: "rtp",
 		HTTPUserAgent:   "Mozilla/5.0 (Linux; U; Android 4.4.2; zh-cn) AppleWebKit/534.30 IPTV",
 		Headers:         map[string]string{},
 		RTSPUserAgent:   "HMTL RTSP 1.0; CTC/2.0",
 		TSRTSPTransport: "udp",
 		TSMaxConcurrent: 3, TSStartTimeout: 15, TSIdleTimeout: 20,
-		Auth: AuthConfig{Enabled: true, PlatformBase: "http://121.60.255.6:8080"},
+		Auth: AuthConfig{PlatformBase: "http://121.60.255.6:8080"},
 	}
 }
 

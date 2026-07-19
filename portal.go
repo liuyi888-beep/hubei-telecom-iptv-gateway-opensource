@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -29,6 +30,28 @@ func decodeBody(body []byte, contentType string) string {
 	return string(body)
 }
 
+type httpStatusError struct {
+	status  int
+	host    string
+	preview string
+}
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("HTTP %d from %s: %s", e.status, e.host, e.preview)
+}
+
+func responseStatus(err error) int {
+	var statusErr *httpStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.status
+	}
+	return 0
+}
+
+func sessionRejected(status int, text string) bool {
+	return status == http.StatusUnauthorized || status == http.StatusForbidden || strings.Contains(text, "rebuildsessionresponse.jsp")
+}
+
 func (g *Gateway) requestRaw(method, rawURL string, form url.Values, extra map[string]string, timeout time.Duration) (string, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -53,9 +76,6 @@ func (g *Gateway) requestRaw(method, rawURL string, form url.Values, extra map[s
 	for k, v := range extra {
 		req.Header.Set(k, v)
 	}
-	if g.cfg.Cookie != "" {
-		req.Header.Set("Cookie", g.cfg.Cookie)
-	}
 	resp, err := g.http.Do(req)
 	if err != nil {
 		return "", "", err
@@ -73,58 +93,24 @@ func (g *Gateway) requestRaw(method, rawURL string, form url.Values, extra map[s
 		if len(preview) > 180 {
 			preview = preview[:180]
 		}
-		return "", resp.Request.URL.String(), fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, resp.Request.URL.Host, preview)
+		return text, resp.Request.URL.String(), &httpStatusError{status: resp.StatusCode, host: resp.Request.URL.Host, preview: preview}
 	}
 	return text, resp.Request.URL.String(), nil
 }
 
-var reRebuildURL = regexp.MustCompile(`(?s)weburl\s*=\s*'([^']*)'\s*\+\s*usertoken\s*\+\s*'([^']*)'`)
-
-func rebuildSessionURL(finalURL, text, token string) string {
-	if token == "" {
-		return ""
+func (g *Gateway) request(method, rawURL string, form url.Values, extra map[string]string, timeout time.Duration) (string, string, error) {
+	if err := g.ensureLogin(); err != nil {
+		return "", "", err
 	}
-	m := reRebuildURL.FindStringSubmatch(text)
-	if len(m) < 3 {
-		return ""
-	}
-	base, err := url.Parse(finalURL)
-	if err != nil {
-		return ""
-	}
-	ref, err := url.Parse(m[1] + url.QueryEscape(token) + m[2])
-	if err != nil {
-		return ""
-	}
-	return base.ResolveReference(ref).String()
-}
-
-func (g *Gateway) requestWithRelogin(method, rawURL string, form url.Values, extra map[string]string, timeout time.Duration, allowRelogin bool) (string, string, error) {
+	observedLogin := g.lastLoginSnapshot()
 	text, final, err := g.requestRaw(method, rawURL, form, extra, timeout)
-	if err != nil || !g.cfg.AutoRebuildSession || !strings.Contains(text, "rebuildsessionresponse.jsp") {
+	if !sessionRejected(responseStatus(err), text) {
 		return text, final, err
 	}
-	rebuild := rebuildSessionURL(final, text, g.userToken)
-	if rebuild != "" {
-		if _, _, err = g.requestRaw(http.MethodGet, rebuild, nil, extra, timeout); err != nil {
-			return "", "", err
-		}
-		text, final, err = g.requestRaw(method, rawURL, form, extra, timeout)
-		if err != nil || !strings.Contains(text, "rebuildsessionresponse.jsp") {
-			return text, final, err
-		}
-	}
-	if !allowRelogin {
-		return text, final, nil
-	}
-	if err := g.renewLogin(); err != nil {
+	if err := g.loginAfterRejectedSession(observedLogin); err != nil {
 		return text, final, err
 	}
 	return g.requestRaw(method, rawURL, form, extra, timeout)
-}
-
-func (g *Gateway) request(method, rawURL string, form url.Values, extra map[string]string, timeout time.Duration) (string, string, error) {
-	return g.requestWithRelogin(method, rawURL, form, extra, timeout, true)
 }
 
 type epgDiscovery struct {
@@ -274,10 +260,10 @@ func urlOrigin(u *url.URL) string {
 }
 
 func (g *Gateway) authRequest(method, rawURL string, form url.Values, timeout time.Duration) (string, string, error) {
-	return g.requestWithRelogin(method, rawURL, form, map[string]string{"User-Agent": "webkit;Resolution(PAL,720P,1080P)"}, timeout, false)
+	return g.requestRaw(method, rawURL, form, map[string]string{"User-Agent": "webkit;Resolution(PAL,720P,1080P)"}, timeout)
 }
 
-func (g *Gateway) initEPGSession(token, authText, authAction string, parseChannels bool) ([]Channel, error) {
+func (g *Gateway) initEPGSession(token, authText, authAction string) (string, string, error) {
 	a := g.cfg.Auth
 	timeout := time.Duration(g.cfg.AuthTimeout) * time.Second
 	texts := []string{}
@@ -289,11 +275,9 @@ func (g *Gateway) initEPGSession(token, authText, authAction string, parseChanne
 		}
 		text, final, err := g.authRequest(http.MethodGet, next, nil, timeout)
 		if err != nil {
-			return nil, err
+			return "", "", err
 		}
-		if parseChannels {
-			texts = append(texts, text)
-		}
+		texts = append(texts, text)
 		d.updateFromAuthHop(text, final)
 	}
 	if d.easipEntryURL == "" {
@@ -314,76 +298,59 @@ func (g *Gateway) initEPGSession(token, authText, authAction string, parseChanne
 		}
 	}
 	if d.easipEntryURL == "" {
-		return nil, fmt.Errorf("EPG service entry not found")
+		return "", "", fmt.Errorf("EPG service entry not found")
 	}
 	text, _, err := g.authRequest(http.MethodGet, d.easipEntryURL, nil, timeout)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
-	if parseChannels {
-		texts = append(texts, text)
-	}
+	texts = append(texts, text)
 	d.updateFromEASIP(text)
 	if d.epgEntryURL == "" || d.epgBase == "" {
-		return nil, fmt.Errorf("EPG entry not found")
+		return "", "", fmt.Errorf("EPG entry not found")
 	}
-	g.setEPGBase(d.epgBase)
-	_ = g.stateSet("epg_base", g.epgBase())
 	epgIndexText, _, err := g.authRequest(http.MethodGet, d.epgEntryURL, nil, timeout)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
-	if parseChannels {
-		texts = append(texts, epgIndexText)
-	}
+	texts = append(texts, epgIndexText)
 	portalForm := parseHiddenInputs(epgIndexText, "authform")
 	if len(portalForm) == 0 {
-		return nil, fmt.Errorf("authform not found")
+		return "", "", fmt.Errorf("authform not found")
 	}
 	callEPG := func(method, path string, form url.Values) error {
 		text, _, err := g.authRequest(method, makeURL(d.epgBase, path, nil), form, timeout)
 		if err != nil {
 			return err
 		}
-		if parseChannels {
-			texts = append(texts, text)
-		}
+		texts = append(texts, text)
 		return nil
 	}
 	if err := callEPG(http.MethodPost, "/iptvepg/function/funcportalauth.jsp", portalForm); err != nil {
-		return nil, err
+		return "", "", err
 	}
 	if err := callEPG(http.MethodGet, "/iptvepg/js/setConfig.js", nil); err != nil {
-		return nil, err
+		return "", "", err
 	}
 	if err := callEPG(http.MethodGet, "/iptvepg/function/frame.jsp", nil); err != nil {
-		return nil, err
+		return "", "", err
 	}
 	judgerText, _, err := g.authRequest(http.MethodPost, makeURL(d.epgBase, "/iptvepg/function/frameset_judger.jsp", nil), url.Values{"picturetype": {"1,3,5"}}, timeout)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
-	if parseChannels {
-		texts = append(texts, judgerText)
-	}
+	texts = append(texts, judgerText)
 	builderForm := parseHiddenInputs(judgerText, "mainWinSrcForm")
 	if len(builderForm) == 0 {
-		return nil, fmt.Errorf("mainWinSrcForm not found")
+		return "", "", fmt.Errorf("mainWinSrcForm not found")
 	}
 	if builderForm.Get("hdmistatus") == "" {
 		builderForm.Set("hdmistatus", "undefined")
 	}
 	if err := callEPG(http.MethodPost, "/iptvepg/function/frameset_builder.jsp", builderForm); err != nil {
-		return nil, err
+		return "", "", err
 	}
-	if !parseChannels {
-		return nil, nil
-	}
-	channels := parseChannelConfigs(strings.Join(texts, "\n"), g.cfg.LiveURLFormat)
-	if len(channels) == 0 {
-		return nil, fmt.Errorf("portal returned no channels")
-	}
-	return channels, nil
+	return strings.Join(texts, "\n"), d.epgBase, nil
 }
 
 var (

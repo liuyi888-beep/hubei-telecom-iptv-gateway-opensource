@@ -30,12 +30,10 @@ type Program struct {
 }
 
 type AuthStatus struct {
-	OK              bool   `json:"ok"`
-	Mode            string `json:"mode"`
-	Message         string `json:"message"`
-	UserTokenLength int    `json:"user_token_len,omitempty"`
-	DynamicChannels int    `json:"dynamic_channels,omitempty"`
-	LastLogin       string `json:"last_login,omitempty"`
+	OK        bool   `json:"ok"`
+	Message   string `json:"message"`
+	LastLogin string `json:"last_login,omitempty"`
+	LastError string `json:"last_error,omitempty"`
 }
 
 type RedirectHop struct {

@@ -92,7 +92,7 @@ func (g *Gateway) statusPayload() map[string]any {
 	cc, pc, _ := g.counts()
 	return map[string]any{
 		"name":    "湖北电信IPTV网关 Go",
-		"version": "1.0.3",
+		"version": "1.0.4",
 		"server": map[string]any{
 			"listen_host":          g.cfg.ListenHost,
 			"listen_port":          g.cfg.ListenPort,
@@ -101,7 +101,7 @@ func (g *Gateway) statusPayload() map[string]any {
 			"rtsp_listen_port":     g.cfg.RTSPListenPort,
 			"rtsp_public_base_url": g.cfg.rtspBaseURL(),
 		},
-		"auth_status": g.authStatus,
+		"auth_status": g.authSnapshot(),
 		"cache": map[string]any{
 			"channel_count":         cc,
 			"program_count":         pc,
@@ -110,7 +110,6 @@ func (g *Gateway) statusPayload() map[string]any {
 		"refresh": g.refreshPayload(),
 		"routes": map[string]any{
 			"status":        "/status.json",
-			"auth":          "/api/auth/status",
 			"channels":      "/api/channels",
 			"diyp":          "/diyp/live.txt",
 			"rtp2httpd":     "/rtp2httpd_catchup.m3u",
@@ -134,7 +133,7 @@ func (g *Gateway) homeHTML() string {
 	cc, pc, _ := g.counts()
 	catchupCount := countCatchup(g.getChannels())
 	authText, authClass := "未登录", "bad"
-	if g.authStatus.OK {
+	if g.authSnapshot().OK {
 		authText, authClass = "已登录", "ok"
 	}
 	lastText, nextText, cacheText, cacheClass := "无", "等待首次刷新", "待刷新", "bad"
@@ -258,7 +257,6 @@ func (g *Gateway) handler() http.Handler {
 		htmlResponse(w, g.homeHTML())
 	})
 	mux.HandleFunc("/status.json", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, g.statusPayload()) })
-	mux.HandleFunc("/api/auth/status", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, g.authStatus) })
 	mux.HandleFunc("/api/channels", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, channelAPIPayloads(g.getChannels()))
 	})

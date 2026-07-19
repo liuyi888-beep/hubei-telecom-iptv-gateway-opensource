@@ -1,50 +1,49 @@
 {
   "listen_host": "0.0.0.0",
   "listen_port": 8899,
-  // 必填：改成运行本程序的网关/NAS 局域网地址，例如 http://192.168.10.12:8899
+  // 必填：运行网关的设备局域网地址，例如 http://192.168.10.12:8899
   "public_base_url": "http://YOUR_GATEWAY_IP:8899",
   "data_dir": "data",
+
   "background_refresh_enabled": true,
   "refresh_interval_hours": 24,
   "days_back": 7,
   "days_forward": 7,
   "include_today": true,
   "catchup_days": 7,
+
   "current_timeshift_window_hours": 4,
   "timeshift_safety_margin_seconds": 120,
   "catchup_match_tolerance_seconds": 120,
+  "resolve_play_url": true,
   "protect_cache_on_empty_refresh": true,
+
   "rtsp_redirect_enabled": true,
   "rtsp_listen_host": "0.0.0.0",
   "rtsp_listen_port": 8555,
-  // 必填：改成运行本程序的网关/NAS 局域网地址，例如 rtsp://192.168.10.12:8555
+  // 必填：运行网关的设备局域网地址，例如 rtsp://192.168.10.12:8555
   "rtsp_public_base_url": "rtsp://YOUR_GATEWAY_IP:8555",
-  "rtsp_client_timeout_seconds": 15,
-  "rtsp_redirect_timeout_seconds": 8,
-  "rtsp_redirect_max_hops": 4,
-  "proactive_login_enabled": true,
-  "proactive_login_before_playurl": true,
-  "playurl_auth_check_interval_seconds": 3600,
-  "resolve_play_url": true,
-  "auto_rebuild_session": true,
+
+  // 登录状态的有效期；过期后下一次 EPG 或 TVOD 请求自动重新登录
+  "auth_session_ttl_seconds": 3600,
   "live_url_format": "rtp",
   "ts_rtsp_transport": "udp",
   "ts_max_concurrent": 3,
   "ts_start_timeout_seconds": 15,
   "ts_idle_timeout_seconds": 20,
+
   "auth": {
-    "enabled": true,
     // 必填：IPTV 账号
     "user_id": "YOUR_IPTV_USER_ID",
     // 必填：IPTV 密码
     "password": "YOUR_IPTV_PASSWORD",
     // 必填：机顶盒 STBID
     "stbid": "YOUR_STBID",
-    // 必填：机顶盒 MAC。示例使用占位值，真实 MAC 请自行填写，建议用小写冒号格式。
+    // 必填：机顶盒 MAC，例如 00:11:22:33:44:55
     "mac": "YOUR_STB_MAC",
-    // 必填：认证用 IP。一般填 IPTV 业务侧 IP，通常类似 10.x.x.x；实测填 NAS 局域网 IP 也可用。
+    // 必填：IPTV 业务 IP，通常为 10.x.x.x
     "auth_ip": "YOUR_IPTV_SERVICE_IP",
-    // 一般不用改：湖北电信 IPTV Portal 平台入口
+    // 通常无需修改：湖北电信 IPTV Portal 入口
     "platform_base": "http://121.60.255.6:8080"
   }
 }

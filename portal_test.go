@@ -94,3 +94,32 @@ func TestRequestRawRejectsHTTPErrorStatus(t *testing.T) {
 		t.Fatalf("error leaked raw body: %v", err)
 	}
 }
+
+func TestSessionRejectedRecognizesOnlyKnownAuthenticationFailures(t *testing.T) {
+	if !sessionRejected(http.StatusUnauthorized, "") {
+		t.Fatal("401 should be treated as a rejected session")
+	}
+	if !sessionRejected(http.StatusForbidden, "") {
+		t.Fatal("403 should be treated as a rejected session")
+	}
+	if !sessionRejected(http.StatusOK, "rebuildsessionresponse.jsp") {
+		t.Fatal("known rebuild page should be treated as a rejected session")
+	}
+	if sessionRejected(http.StatusOK, `{"result":"no rtsp URL"}`) {
+		t.Fatal("a valid business response without RTSP must not be treated as a rejected session")
+	}
+	if sessionRejected(http.StatusBadGateway, "backend failed") {
+		t.Fatal("5xx response must not be treated as a rejected session")
+	}
+}
+
+func TestMissingAuthConfigValueRecognizesExamplePlaceholders(t *testing.T) {
+	for _, value := range []string{"", "  ", "YOUR_IPTV_USER_ID", "YOUR_STB_MAC"} {
+		if !missingAuthConfigValue(value) {
+			t.Fatalf("%q should be rejected", value)
+		}
+	}
+	if missingAuthConfigValue("jzi240124673027") {
+		t.Fatal("real account should not be rejected")
+	}
+}
